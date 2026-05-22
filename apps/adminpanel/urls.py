@@ -1,0 +1,23 @@
+from django.urls import path
+from rest_framework.routers import DefaultRouter
+
+from apps.users.views import UserAdminViewSet
+from .views import (
+    ActivityLogViewSet,
+    AdminLoginView,
+    AdminMeView,
+    AppSettingsView,
+    DashboardStatsView,
+)
+
+router = DefaultRouter()
+router.register("users", UserAdminViewSet, basename="admin-users")
+router.register("activity", ActivityLogViewSet, basename="admin-activity")
+
+urlpatterns = [
+    path("login/", AdminLoginView.as_view(), name="admin-login"),
+    path("me/", AdminMeView.as_view(), name="admin-me"),
+    path("dashboard/", DashboardStatsView.as_view(), name="admin-dashboard"),
+    path("settings/", AppSettingsView.as_view(), name="admin-settings"),
+    *router.urls,
+]

@@ -1,0 +1,36 @@
+services:
+  - type: web
+    name: old-car-bazar-api
+    runtime: python
+    rootDir: backend
+    plan: free
+    region: singapore
+    branch: main
+    buildCommand: "./build.sh"
+    startCommand: "gunicorn config.wsgi:application --bind 0.0.0.0:$PORT --workers 3 --timeout 120"
+    healthCheckPath: /api/schema/
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.6
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: "False"
+      - key: ALLOWED_HOSTS
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: JWT_ACCESS_LIFETIME_MIN
+        value: "60"
+      - key: JWT_REFRESH_LIFETIME_DAYS
+        value: "30"
+      - key: OTP_PROVIDER
+        value: console
