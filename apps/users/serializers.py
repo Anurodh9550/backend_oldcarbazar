@@ -29,7 +29,10 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class RegisterSerializer(serializers.ModelSerializer):
+    """Register a buyer/seller. Phone is the primary identifier; email optional."""
     password = serializers.CharField(write_only=True, min_length=6, max_length=128)
+    email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
+    city = serializers.CharField(required=False, allow_blank=True, max_length=80)
 
     class Meta:
         model = User
@@ -41,12 +44,17 @@ class RegisterSerializer(serializers.ModelSerializer):
         return value
 
     def validate_email(self, value):
-        if value and User.objects.filter(email__iexact=value).exists():
+        if not value:
+            return None
+        if User.objects.filter(email__iexact=value).exists():
             raise serializers.ValidationError("Email already registered.")
         return value
 
     def create(self, validated):
         password = validated.pop("password")
+        # Treat empty email as NULL so the unique-email index doesn't clash on "".
+        if not validated.get("email"):
+            validated["email"] = None
         user = User(**validated)
         user.set_password(password)
         user.login_count = 1
@@ -56,14 +64,19 @@ class RegisterSerializer(serializers.ModelSerializer):
 
 
 class LoginSerializer(serializers.Serializer):
-    """Phone or email + password login."""
+    """Phone-first login. Email is also accepted for users who set one."""
     identifier = serializers.CharField()
     password = serializers.CharField(write_only=True)
 
     def validate(self, attrs):
         ident = attrs["identifier"].strip()
         password = attrs["password"]
-        lookup = {"email__iexact": ident} if "@" in ident else {"phone": ident}
+        if "@" in ident:
+            lookup = {"email__iexact": ident}
+        else:
+            # Strip +91 / spaces / dashes, keep last 10 digits.
+            digits = "".join(ch for ch in ident if ch.isdigit())
+            lookup = {"phone": digits[-10:] if len(digits) >= 10 else digits}
         try:
             user = User.objects.get(**lookup)
         except User.DoesNotExist:

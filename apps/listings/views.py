@@ -1,4 +1,7 @@
 """Listings API."""
+import logging
+
+import cloudinary
 import cloudinary.uploader
 from cloudinary.exceptions import Error as CloudinaryError
 from django.db.models import F
@@ -6,6 +9,8 @@ from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
+
+logger = logging.getLogger(__name__)
 
 from apps.adminpanel.models import ActivityLog
 from apps.adminpanel.permissions import IsAdminOperator
@@ -89,6 +94,22 @@ class ListingViewSet(
 
     @action(
         detail=False,
+        methods=["get"],
+        url_path="media-config",
+        permission_classes=[permissions.AllowAny],
+    )
+    def media_config(self, request):
+        """Public diagnostic: is Cloudinary set up on the server?"""
+        cfg = cloudinary.config()
+        return Response({
+            "configured": bool(cfg.cloud_name and cfg.api_key and cfg.api_secret),
+            "cloud_name_set": bool(cfg.cloud_name),
+            "api_key_set": bool(cfg.api_key),
+            "api_secret_set": bool(cfg.api_secret),
+        })
+
+    @action(
+        detail=False,
         methods=["post"],
         url_path="upload-media",
         permission_classes=[permissions.IsAuthenticated],
@@ -96,6 +117,25 @@ class ListingViewSet(
     )
     def upload_media(self, request):
         """Upload a photo/video to Cloudinary and return the hosted URL."""
+        cfg = cloudinary.config()
+        if not (cfg.cloud_name and cfg.api_key and cfg.api_secret):
+            logger.error(
+                "Cloudinary env vars missing: cloud_name=%s api_key_set=%s api_secret_set=%s",
+                cfg.cloud_name,
+                bool(cfg.api_key),
+                bool(cfg.api_secret),
+            )
+            return Response(
+                {
+                    "detail": (
+                        "Server is not configured for media uploads. "
+                        "Admin needs to set CLOUDINARY_CLOUD_NAME, "
+                        "CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET."
+                    )
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
         ser = MediaUploadSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
 
@@ -112,9 +152,16 @@ class ListingViewSet(
                 overwrite=False,
             )
         except CloudinaryError as exc:
+            logger.exception("Cloudinary upload failed for user %s", request.user.pk)
             return Response(
                 {"detail": f"Cloudinary upload failed: {exc}"},
                 status=status.HTTP_502_BAD_GATEWAY,
+            )
+        except Exception as exc:  # pragma: no cover — surface unexpected errors
+            logger.exception("Unexpected upload error for user %s", request.user.pk)
+            return Response(
+                {"detail": f"Unexpected upload error: {exc}"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
         return Response(
