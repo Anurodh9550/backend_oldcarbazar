@@ -181,10 +181,22 @@ SIMPLE_JWT = {
 CORS_ALLOWED_ORIGINS = env("CORS_ALLOWED_ORIGINS")
 CORS_ALLOW_CREDENTIALS = True
 
+# Allow every Vercel deployment URL for this project (production + previews
+# + git-branch URLs like https://oldcarbazar-git-main-<user>.vercel.app).
+# Without this, the browser blocks the request and the frontend reports
+# "Failed to fetch" even though the backend itself is reachable.
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https://([a-z0-9-]+\.)*vercel\.app$",
+    r"^http://localhost(:\d+)?$",
+    r"^http://127\.0\.0\.1(:\d+)?$",
+]
+
 # Cross-site POSTs from the frontend (login, listings, uploads) need this.
 CSRF_TRUSTED_ORIGINS = [
     origin for origin in CORS_ALLOWED_ORIGINS if origin.startswith(("http://", "https://"))
 ]
+# Trust all Vercel-hosted frontends for CSRF as well (matches CORS regex above).
+CSRF_TRUSTED_ORIGINS.append("https://*.vercel.app")
 if RENDER_EXTERNAL_HOSTNAME:
     CSRF_TRUSTED_ORIGINS.append(f"https://{RENDER_EXTERNAL_HOSTNAME}")
 
