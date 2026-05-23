@@ -18,6 +18,7 @@ from .serializers import (
     AdminSerializer,
     AppSettingsSerializer,
     admin_jwt_tokens,
+    staff_jwt_tokens,
 )
 
 User = get_user_model()
@@ -31,6 +32,24 @@ class AdminLoginView(generics.GenericAPIView):
     def post(self, request):
         ser = self.get_serializer(data=request.data)
         ser.is_valid(raise_exception=True)
+        staff_user = ser.validated_data.get("staff_user")
+        if staff_user is not None:
+            staff_user.last_login_at = timezone.now()
+            staff_user.save(update_fields=["last_login_at"])
+            tokens = staff_jwt_tokens(staff_user)
+            return Response({
+                **tokens,
+                "admin": {
+                    "id": str(staff_user.id),
+                    "name": staff_user.name,
+                    "email": staff_user.email,
+                    "role": "super-admin" if staff_user.is_superuser else "moderator",
+                    "avatar_url": staff_user.avatar_url,
+                    "last_login_at": staff_user.last_login_at,
+                    "created_at": staff_user.date_joined,
+                },
+            })
+
         admin: Admin = ser.validated_data["admin"]
         admin.last_login_at = timezone.now()
         admin.save(update_fields=["last_login_at"])

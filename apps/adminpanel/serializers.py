@@ -1,7 +1,10 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
+from django.contrib.auth import authenticate, get_user_model
 
 from .models import ActivityLog, Admin, AppSettings
+
+User = get_user_model()
 
 
 class AdminSerializer(serializers.ModelSerializer):
@@ -20,7 +23,19 @@ class AdminLoginSerializer(serializers.Serializer):
         try:
             admin = Admin.objects.get(email=email)
         except Admin.DoesNotExist as exc:
-            raise serializers.ValidationError("Invalid email or password.") from exc
+            try:
+                user = User.objects.get(email__iexact=email, is_staff=True)
+            except User.DoesNotExist:
+                raise serializers.ValidationError("Invalid email or password.") from exc
+            auth_user = authenticate(
+                request=self.context.get("request"),
+                phone=user.phone,
+                password=attrs["password"],
+            )
+            if not auth_user:
+                raise serializers.ValidationError("Invalid email or password.") from exc
+            attrs["staff_user"] = auth_user
+            return attrs
         if not admin.check_password(attrs["password"]):
             raise serializers.ValidationError("Invalid email or password.")
         attrs["admin"] = admin
@@ -41,6 +56,14 @@ def admin_jwt_tokens(admin: Admin) -> dict:
     refresh["is_admin"] = True
     refresh["email"] = admin.email
     refresh["role"] = admin.role
+    return {
+        "access": str(refresh.access_token),
+        "refresh": str(refresh),
+    }
+
+
+def staff_jwt_tokens(user) -> dict:
+    refresh = RefreshToken.for_user(user)
     return {
         "access": str(refresh.access_token),
         "refresh": str(refresh),
