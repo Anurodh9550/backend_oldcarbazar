@@ -23,14 +23,29 @@ class InquirySerializer(serializers.ModelSerializer):
 
 
 class CreateInquirySerializer(serializers.Serializer):
+    """Minimal buyer-intent capture: only Name + Phone are required.
+
+    Email and free-text message are optional. The buyer's intent is implied
+    by the listing they submitted the form against.
+    """
     listing = serializers.UUIDField()
     buyer_name = serializers.CharField(max_length=120)
     buyer_phone = serializers.CharField(max_length=15)
     buyer_email = serializers.EmailField(required=False, allow_blank=True)
-    message = serializers.CharField(min_length=3, max_length=1000)
+    message = serializers.CharField(
+        max_length=1000, required=False, allow_blank=True, default=""
+    )
     channel = serializers.ChoiceField(
         choices=Inquiry.Channel.choices, default=Inquiry.Channel.FORM
     )
+
+    def validate_buyer_phone(self, value):
+        digits = "".join(ch for ch in value if ch.isdigit())[-10:]
+        if len(digits) != 10 or digits[0] not in "6789":
+            raise serializers.ValidationError(
+                "Enter a 10-digit Indian mobile number."
+            )
+        return digits
 
     def create(self, validated):
         request = self.context["request"]
@@ -39,17 +54,21 @@ class CreateInquirySerializer(serializers.Serializer):
         except Listing.DoesNotExist as exc:
             raise serializers.ValidationError("Listing not found.") from exc
 
+        message = (validated.get("message") or "").strip()
+        if not message:
+            message = f"Interested in {listing.title}. Please call back."
+
         inquiry = Inquiry.objects.create(
             listing=listing,
             listing_title=listing.title,
             listing_price=listing.price_label,
             buyer=request.user if request.user.is_authenticated else None,
-            buyer_name=validated["buyer_name"],
+            buyer_name=validated["buyer_name"].strip(),
             buyer_phone=validated["buyer_phone"],
             buyer_email=validated.get("buyer_email") or None,
             seller=listing.seller,
             seller_name=listing.seller_name,
-            message=validated["message"],
+            message=message,
             channel=validated["channel"],
             city=listing.location,
         )
