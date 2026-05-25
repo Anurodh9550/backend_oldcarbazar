@@ -11,8 +11,8 @@ class ListingFilter(df.FilterSet):
     body_type = df.CharFilter(field_name="body_type", lookup_expr="iexact")
     ownership = df.CharFilter(lookup_expr="iexact")
     featured = df.BooleanFilter()
-    moderation = df.CharFilter()
-    status = df.CharFilter()
+    moderation = df.CharFilter(method="filter_moderation")
+    status = df.CharFilter(method="filter_status")
 
     # price in lakhs from query string
     min_price = df.NumberFilter(method="filter_min_price")
@@ -31,3 +31,15 @@ class ListingFilter(df.FilterSet):
 
     def filter_max_price(self, qs, name, value):
         return qs.filter(price_inr__lte=value * 100000)
+
+    def filter_moderation(self, qs, name, value):
+        # "all" is a sentinel the admin UI sends to disable the default
+        # approved-only filter applied in the view.
+        if not value or value.lower() == "all":
+            return qs
+        return qs.filter(moderation=value)
+
+    def filter_status(self, qs, name, value):
+        if not value or value.lower() == "all":
+            return qs
+        return qs.filter(status=value)
