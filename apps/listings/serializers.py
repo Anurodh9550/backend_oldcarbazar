@@ -200,6 +200,123 @@ class CreateListingSerializer(serializers.Serializer):
         return listing
 
 
+class UpdateListingSerializer(serializers.Serializer):
+    """Partial update for an existing listing (owner-only).
+
+    Mirrors `CreateListingSerializer` but every field is optional so PATCH
+    callers can send just the fields they changed.
+    """
+    brand = serializers.CharField(max_length=80, required=False)
+    model = serializers.CharField(max_length=120, required=False)
+    variant = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    year = serializers.IntegerField(
+        min_value=1990, max_value=timezone.now().year + 1, required=False
+    )
+    body_type = serializers.CharField(max_length=32, required=False, allow_blank=True)
+    color = serializers.CharField(max_length=32, required=False, allow_blank=True)
+    fuel = serializers.CharField(max_length=24, required=False)
+    transmission = serializers.CharField(max_length=24, required=False)
+    kms = serializers.IntegerField(min_value=0, max_value=1_000_000, required=False)
+    owners = serializers.CharField(max_length=32, required=False)
+    seats = serializers.IntegerField(min_value=2, max_value=20, required=False)
+    registration_month = serializers.CharField(
+        max_length=16, required=False, allow_blank=True
+    )
+    engine_cc = serializers.CharField(max_length=16, required=False, allow_blank=True)
+    mileage = serializers.CharField(max_length=24, required=False, allow_blank=True)
+    insurance = serializers.CharField(max_length=64, required=False, allow_blank=True)
+    price = serializers.CharField(max_length=40, required=False)
+    city = serializers.CharField(max_length=80, required=False)
+    area = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    reg_number = serializers.CharField(max_length=32, required=False, allow_blank=True)
+    description = serializers.CharField(
+        max_length=2000, required=False, allow_blank=True
+    )
+    features = serializers.ListField(
+        child=serializers.CharField(max_length=80), required=False
+    )
+    seller_name = serializers.CharField(max_length=120, required=False)
+    phone = serializers.CharField(max_length=15, required=False)
+    email = serializers.EmailField(required=False, allow_blank=True)
+    whatsapp = serializers.BooleanField(required=False)
+    photos = serializers.ListField(child=serializers.URLField(), required=False)
+
+    OWNERSHIP_MAP = {
+        "1st Owner": "First owner",
+        "2nd Owner": "Second owner",
+        "3rd Owner": "Third owner",
+    }
+
+    DIRECT_FIELDS = {
+        "brand": "brand",
+        "model": "model",
+        "variant": "variant",
+        "year": "year",
+        "body_type": "body_type",
+        "color": "color",
+        "fuel": "fuel",
+        "transmission": "transmission",
+        "kms": "kms",
+        "seats": "seats",
+        "registration_month": "registration_month",
+        "engine_cc": "engine_cc",
+        "mileage": "mileage",
+        "insurance": "insurance",
+        "area": "area",
+        "reg_number": "reg_number",
+        "description": "description",
+        "features": "features",
+        "seller_name": "seller_name",
+        "whatsapp": "whatsapp",
+    }
+
+    def update(self, instance, validated):
+        for src, dest in self.DIRECT_FIELDS.items():
+            if src in validated:
+                setattr(instance, dest, validated[src])
+
+        if "owners" in validated:
+            instance.owners = validated["owners"]
+            instance.ownership = self.OWNERSHIP_MAP.get(
+                validated["owners"], "Fourth owner & above"
+            )
+
+        if "price" in validated:
+            instance.price_label = _format_price_label(validated["price"])
+            instance.price_inr = _lakhs_to_inr(validated["price"])
+
+        if "city" in validated:
+            instance.location = validated["city"]
+
+        if "phone" in validated:
+            instance.seller_phone = validated["phone"]
+
+        if "email" in validated:
+            instance.seller_email = validated["email"] or None
+
+        if any(k in validated for k in ("year", "brand", "model", "variant")):
+            title = f"{instance.year} {instance.brand} {instance.model}"
+            if instance.variant:
+                title += f" {instance.variant}"
+            instance.title = title.strip()
+
+        instance.save()
+
+        if "photos" in validated:
+            new_urls = validated["photos"]
+            instance.photos.all().delete()
+            ListingPhoto.objects.bulk_create([
+                ListingPhoto(
+                    listing=instance, url=url, position=i, is_cover=(i == 0)
+                )
+                for i, url in enumerate(new_urls)
+            ])
+            instance.cover_image = (new_urls or [""])[0]
+            instance.save(update_fields=["cover_image", "updated_at"])
+
+        return instance
+
+
 class ModerationSerializer(serializers.Serializer):
     status = serializers.ChoiceField(choices=Listing.Moderation.choices)
     reason = serializers.CharField(required=False, allow_blank=True, default="")

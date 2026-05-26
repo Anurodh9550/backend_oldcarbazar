@@ -24,6 +24,7 @@ from .serializers import (
     ListingSerializer,
     MediaUploadSerializer,
     ModerationSerializer,
+    UpdateListingSerializer,
     UpdateStatusSerializer,
 )
 
@@ -32,17 +33,20 @@ class ListingViewSet(
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
     mixins.CreateModelMixin,
+    mixins.UpdateModelMixin,
     mixins.DestroyModelMixin,
     viewsets.GenericViewSet,
 ):
     """Public listings API.
 
-    - GET  /api/v1/listings/             list (filters: city, brand, fuel, …)
-    - GET  /api/v1/listings/<id>/         detail (auto-increments views)
-    - POST /api/v1/listings/              create (auth required, becomes seller)
-    - DEL  /api/v1/listings/<id>/         owner/admin delete
-    - POST /api/v1/listings/<id>/status/  owner status update (active|sold|draft)
-    - GET  /api/v1/listings/mine/         current user's listings
+    - GET   /api/v1/listings/              list (filters: city, brand, fuel, …)
+    - GET   /api/v1/listings/<id>/         detail (auto-increments views)
+    - POST  /api/v1/listings/              create (auth required, becomes seller)
+    - PATCH /api/v1/listings/<id>/         owner/admin partial update
+    - PUT   /api/v1/listings/<id>/         owner/admin full update
+    - DEL   /api/v1/listings/<id>/         owner/admin delete
+    - POST  /api/v1/listings/<id>/status/  owner status update (active|sold|draft)
+    - GET   /api/v1/listings/mine/         current user's listings
     """
     queryset = Listing.objects.prefetch_related("photos").all()
     permission_classes = (IsOwnerOrAdminOrReadOnly,)
@@ -54,7 +58,21 @@ class ListingViewSet(
     def get_serializer_class(self):
         if self.action == "create":
             return CreateListingSerializer
+        if self.action in ("update", "partial_update"):
+            return UpdateListingSerializer
         return ListingSerializer
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        ser = self.get_serializer(instance, data=request.data, partial=partial)
+        ser.is_valid(raise_exception=True)
+        updated = ser.save()
+        return Response(ListingSerializer(updated).data)
+
+    def partial_update(self, request, *args, **kwargs):
+        kwargs["partial"] = True
+        return self.update(request, *args, **kwargs)
 
     def get_queryset(self):
         qs = super().get_queryset()
