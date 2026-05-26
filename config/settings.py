@@ -168,8 +168,11 @@ SIMPLE_JWT = {
         timedelta(minutes=env("JWT_ACCESS_LIFETIME_MIN")),
     "REFRESH_TOKEN_LIFETIME":
         timedelta(days=env("JWT_REFRESH_LIFETIME_DAYS")),
-    "ROTATE_REFRESH_TOKENS": True,
-    "BLACKLIST_AFTER_ROTATION": True,
+    # Keep the same refresh token until it expires. Rotation + blacklist caused
+    # sellers to get 401 on DELETE/Mark-as-Sold when two tabs refreshed or an
+    # old refresh token was still in localStorage after redeploy.
+    "ROTATE_REFRESH_TOKENS": False,
+    "BLACKLIST_AFTER_ROTATION": False,
     "AUTH_HEADER_TYPES": ("Bearer",),
     "USER_ID_FIELD": "id",
     "USER_ID_CLAIM": "user_id",
