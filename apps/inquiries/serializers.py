@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from django.db.models import F
 from rest_framework import serializers
 
@@ -185,7 +187,9 @@ class CreateOfferSerializer(serializers.Serializer):
     buyer_name = serializers.CharField(max_length=120)
     buyer_phone = serializers.CharField(max_length=15)
     buyer_email = serializers.EmailField(required=False, allow_blank=True)
-    amount = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=1)
+    amount = serializers.DecimalField(
+        max_digits=12, decimal_places=2, min_value=Decimal("1")
+    )
     message = serializers.CharField(
         max_length=1000, required=False, allow_blank=True, default=""
     )
