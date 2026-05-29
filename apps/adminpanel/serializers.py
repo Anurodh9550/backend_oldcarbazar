@@ -91,6 +91,6 @@ class AppSettingsSerializer(serializers.ModelSerializer):
             "email_notifications", "sms_notifications", "whatsapp_enabled",
             "max_photos_per_listing", "min_listing_price", "max_listing_price",
             "blocked_keywords", "support_email", "support_phone",
-            "brand_color", "updated_at",
+            "brand_color", "loan_tools_content", "updated_at",
         )
         read_only_fields = ("updated_at",)

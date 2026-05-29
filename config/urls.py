@@ -8,12 +8,23 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
 )
 
+from apps.adminpanel.views import LoanToolsContentView
+
+from apps.inquiries.urls import offer_urls, test_drive_urls
+
 api_v1 = [
     path("auth/", include("apps.users.urls")),
     path("cities/", include("apps.cities.urls")),
     path("listings/", include("apps.listings.urls")),
     path("inquiries/", include("apps.inquiries.urls")),
+    path("test-drives/", include((test_drive_urls, "test-drives"))),
+    path("offers/", include((offer_urls, "offers"))),
     path("admin-panel/", include("apps.adminpanel.urls")),
+    path(
+        "loan-tools/content/",
+        LoanToolsContentView.as_view(),
+        name="loan-tools-content",
+    ),
 ]
 
 urlpatterns = [

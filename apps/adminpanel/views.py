@@ -157,6 +157,16 @@ class AppSettingsView(generics.RetrieveUpdateAPIView):
         )
 
 
+class LoanToolsContentView(generics.GenericAPIView):
+    """GET /api/v1/loan-tools/content/ — public Loan & Tools copy for the storefront."""
+
+    permission_classes = (permissions.AllowAny,)
+
+    def get(self, request):
+        settings_row = AppSettings.singleton()
+        return Response({"content": settings_row.loan_tools_content})
+
+
 class ActivityLogViewSet(
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,

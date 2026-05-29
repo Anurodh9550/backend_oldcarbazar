@@ -181,7 +181,15 @@ SIMPLE_JWT = {
 }
 
 # ----------------------------- CORS -------------------------------- #
-CORS_ALLOWED_ORIGINS = env("CORS_ALLOWED_ORIGINS")
+PRODUCTION_FRONTEND_ORIGINS = [
+    "https://oldcarbazar.com",
+    "https://www.oldcarbazar.com",
+]
+
+CORS_ALLOWED_ORIGINS = list(dict.fromkeys([
+    *env("CORS_ALLOWED_ORIGINS"),
+    *PRODUCTION_FRONTEND_ORIGINS,
+]))
 CORS_ALLOW_CREDENTIALS = True
 
 # Allow every Vercel deployment URL for this project (production + previews

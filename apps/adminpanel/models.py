@@ -97,6 +97,7 @@ class AppSettings(models.Model):
     support_email = models.EmailField(default="support@oldcarbazar.com")
     support_phone = models.CharField(max_length=32, default="+91 98765 43210")
     brand_color = models.CharField(max_length=16, default="#f75d34")
+    loan_tools_content = models.JSONField(blank=True, null=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
