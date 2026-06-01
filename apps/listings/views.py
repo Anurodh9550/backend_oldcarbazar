@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 from apps.adminpanel.models import ActivityLog
 from apps.adminpanel.permissions import IsAdminOperator
+from apps.subscriptions.services import can_publish
 from .filters import ListingFilter
 from .models import Listing
 from .permissions import IsOwnerOrAdminOrReadOnly
@@ -90,6 +91,26 @@ class ListingViewSet(
                 {"detail": "Login required."},
                 status=status.HTTP_401_UNAUTHORIZED,
             )
+
+        # Free-tier quota check. Once the seller is at the limit we
+        # block the create (instead of letting it succeed and silently
+        # putting them above the cap) and return the quota info so the
+        # frontend can render an Upgrade modal without another fetch.
+        allowed, quota = can_publish(request.user)
+        if not allowed:
+            return Response(
+                {
+                    "detail": (
+                        f"You have reached the free plan limit of "
+                        f"{quota['listings_limit']} active listings. "
+                        f"Upgrade to {quota['plan_name']} to post more."
+                    ),
+                    "code": "subscription_required",
+                    "subscription": quota,
+                },
+                status=status.HTTP_402_PAYMENT_REQUIRED,
+            )
+
         ser = self.get_serializer(data=request.data)
         ser.is_valid(raise_exception=True)
         listing = ser.save()

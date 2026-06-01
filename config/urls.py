@@ -19,6 +19,7 @@ api_v1 = [
     path("inquiries/", include("apps.inquiries.urls")),
     path("test-drives/", include((test_drive_urls, "test-drives"))),
     path("offers/", include((offer_urls, "offers"))),
+    path("subscriptions/", include("apps.subscriptions.urls")),
     path("admin-panel/", include("apps.adminpanel.urls")),
     path(
         "loan-tools/content/",

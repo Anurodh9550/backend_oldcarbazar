@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     "apps.listings",
     "apps.inquiries",
     "apps.adminpanel",
+    "apps.subscriptions",
     "apps.core",
 ]
 
@@ -222,6 +223,16 @@ SPECTACULAR_SETTINGS = {
 # --------------------------- App settings -------------------------- #
 OTP_PROVIDER = env("OTP_PROVIDER", default="console")
 OTP_EXPIRY_SECONDS = 5 * 60
+
+# Subscriptions: until the real payment gateway (Razorpay) is wired,
+# /subscriptions/activate/ is gated by this flag so that production
+# does not accidentally hand out paid plans for free. Setting it to
+# True is safe in DEBUG / staging — that's where sellers test the
+# upgrade flow.
+SUBSCRIPTION_ALLOW_DEMO_ACTIVATION = env.bool(
+    "SUBSCRIPTION_ALLOW_DEMO_ACTIVATION",
+    default=DEBUG,
+)
 
 # Security tightening for production
 if not DEBUG:
