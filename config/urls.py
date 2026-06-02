@@ -11,6 +11,7 @@ from drf_spectacular.views import (
 from apps.adminpanel.views import LoanToolsContentView
 
 from apps.inquiries.urls import offer_urls, test_drive_urls
+from apps.users.urls import dealer_urls
 
 api_v1 = [
     path("auth/", include("apps.users.urls")),
@@ -20,6 +21,7 @@ api_v1 = [
     path("test-drives/", include((test_drive_urls, "test-drives"))),
     path("offers/", include((offer_urls, "offers"))),
     path("subscriptions/", include("apps.subscriptions.urls")),
+    path("dealers/", include((dealer_urls, "dealers"))),
     path("admin-panel/", include("apps.adminpanel.urls")),
     path(
         "loan-tools/content/",

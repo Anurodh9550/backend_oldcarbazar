@@ -41,6 +41,28 @@ class ActivateSubscriptionSerializer(serializers.Serializer):
     )
 
 
+class CreateRazorpayOrderSerializer(serializers.Serializer):
+    plan = serializers.CharField()
+
+
+class RazorpayOrderSerializer(serializers.Serializer):
+    key_id = serializers.CharField()
+    order_id = serializers.CharField()
+    amount = serializers.IntegerField()
+    amount_inr = serializers.IntegerField()
+    currency = serializers.CharField()
+    plan = PlanSerializer()
+    name = serializers.CharField()
+    email = serializers.EmailField(allow_blank=True, allow_null=True)
+    contact = serializers.CharField()
+
+
+class VerifyRazorpayPaymentSerializer(serializers.Serializer):
+    razorpay_order_id = serializers.CharField()
+    razorpay_payment_id = serializers.CharField()
+    razorpay_signature = serializers.CharField()
+
+
 class SubscriptionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Subscription

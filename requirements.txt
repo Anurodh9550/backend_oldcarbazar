@@ -11,6 +11,8 @@ psycopg[binary]>=3.2.3
 Pillow>=11.3.0
 # Cloudinary SDK — media uploads (listing photos, avatars, etc.)
 cloudinary>=1.41.0
+# Razorpay SDK — subscription checkout/orders/signature verification
+razorpay==2.0.1
 drf-spectacular==0.28.0
 gunicorn==23.0.0
 whitenoise==6.8.2

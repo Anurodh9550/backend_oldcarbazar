@@ -234,6 +234,12 @@ SUBSCRIPTION_ALLOW_DEMO_ACTIVATION = env.bool(
     default=DEBUG,
 )
 
+# Razorpay payment gateway. KEY_ID is safe to return to the frontend during
+# checkout; KEY_SECRET and WEBHOOK_SECRET must stay server-side only.
+RAZORPAY_KEY_ID = env("RAZORPAY_KEY_ID", default="")
+RAZORPAY_KEY_SECRET = env("RAZORPAY_KEY_SECRET", default="")
+RAZORPAY_WEBHOOK_SECRET = env("RAZORPAY_WEBHOOK_SECRET", default="")
+
 # Security tightening for production
 if not DEBUG:
     SESSION_COOKIE_SECURE = True
