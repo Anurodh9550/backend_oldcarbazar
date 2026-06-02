@@ -6,6 +6,7 @@ from .views import (
     MySubscriptionsView,
     PlansView,
     RazorpayWebhookView,
+    SubscriptionInvoiceView,
     SubscriptionStatusView,
     VerifyRazorpayPaymentView,
 )
@@ -30,4 +31,9 @@ urlpatterns = [
     ),
     path("activate/", ActivateSubscriptionView.as_view(), name="subscription-activate"),
     path("mine/", MySubscriptionsView.as_view(), name="subscription-mine"),
+    path(
+        "<uuid:sub_id>/invoice/",
+        SubscriptionInvoiceView.as_view(),
+        name="subscription-invoice",
+    ),
 ]

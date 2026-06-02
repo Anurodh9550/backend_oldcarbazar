@@ -400,11 +400,93 @@ class RazorpayWebhookView(APIView):
         return Response({"ok": True})
 
 
+def _build_invoice_payload(sub: Subscription, *, user) -> dict:
+    """Single source of truth for invoice/billing payload.
+
+    Looks up the Razorpay order linked to this subscription (if any) so the
+    UI can show real `razorpay_order_id` + `razorpay_payment_id`. For demo or
+    manually-activated rows the same shape is returned with empty IDs and a
+    plain text receipt number derived from the subscription id.
+    """
+    plan = get_plan(sub.plan)
+    plan_name = plan.name if plan else sub.plan
+
+    rzp_order = getattr(sub, "razorpay_order", None)
+    razorpay_order_id = rzp_order.razorpay_order_id if rzp_order else ""
+    razorpay_payment_id = (
+        rzp_order.razorpay_payment_id
+        if rzp_order
+        else sub.provider_payment_id
+    )
+    receipt = rzp_order.receipt if rzp_order else f"ocb_sub_{sub.id.hex[:12]}"
+
+    # Human-friendly invoice number: OCB-YYYYMMDD-<short>
+    invoice_number = (
+        f"OCB-{sub.started_at:%Y%m%d}-{str(sub.id).split('-')[0].upper()}"
+    )
+
+    return {
+        "subscription_id": str(sub.id),
+        "invoice_number": invoice_number,
+        "receipt": receipt,
+        "issued_at": sub.created_at,
+        "plan_code": sub.plan,
+        "plan_name": plan_name,
+        "amount_inr": sub.amount_inr,
+        "currency": "INR",
+        "status": sub.status,
+        "started_at": sub.started_at,
+        "expires_at": sub.expires_at,
+        "provider": sub.provider,
+        "razorpay_order_id": razorpay_order_id,
+        "razorpay_payment_id": razorpay_payment_id,
+        "customer": {
+            "name": user.name,
+            "email": user.email or "",
+            "phone": user.phone,
+            "city": user.city or "",
+        },
+        "seller": {
+            "name": "Old Car Bazar",
+            "address": "Old Car Bazar, India",
+            "email": "support@oldcarbazar.com",
+            "website": "https://oldcarbazar.com",
+        },
+    }
+
+
 class MySubscriptionsView(APIView):
     permission_classes = (permissions.IsAuthenticated,)
 
     def get(self, request):
-        qs = Subscription.objects.filter(user=request.user).order_by("-created_at")
-        return Response(
-            {"subscriptions": SubscriptionSerializer(qs, many=True).data}
+        qs = (
+            Subscription.objects
+            .filter(user=request.user)
+            .select_related("razorpay_order")
+            .order_by("-created_at")
         )
+        invoices = [_build_invoice_payload(sub, user=request.user) for sub in qs]
+        return Response({
+            "subscriptions": SubscriptionSerializer(qs, many=True).data,
+            "invoices": invoices,
+        })
+
+
+class SubscriptionInvoiceView(APIView):
+    """Single invoice payload for `GET /subscriptions/<id>/invoice/`."""
+
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def get(self, request, sub_id):
+        sub = (
+            Subscription.objects
+            .filter(user=request.user, id=sub_id)
+            .select_related("razorpay_order")
+            .first()
+        )
+        if not sub:
+            return Response(
+                {"detail": "Invoice not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        return Response(_build_invoice_payload(sub, user=request.user))
