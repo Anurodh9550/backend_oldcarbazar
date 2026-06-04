@@ -102,7 +102,7 @@ class ListingViewSet(
     )
     ordering = (
         "-featured",
-        "-is_boosted",
+        "-boost_active",
         "-inquiries_count",
         "-views",
         "-created_at",
@@ -132,8 +132,11 @@ class ListingViewSet(
         # Annotate paid-boost state so the default ordering can rank active
         # boosts just below admin-pinned featured cars. (A model property
         # can't be used in order_by, so we mirror it as a DB expression.)
+        # NOTE: annotation name must NOT clash with the model's `is_boosted`
+        # property (a property is a data descriptor and would raise when Django
+        # tries to set the annotated value on each instance).
         qs = qs.annotate(
-            is_boosted=Case(
+            boost_active=Case(
                 When(boosted_until__gt=timezone.now(), then=Value(True)),
                 default=Value(False),
                 output_field=BooleanField(),
