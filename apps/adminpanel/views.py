@@ -140,6 +140,97 @@ class DashboardStatsView(generics.GenericAPIView):
         })
 
 
+class AdminPaymentsView(generics.GenericAPIView):
+    """GET /api/v1/admin-panel/payments/
+
+    All money flowing through the platform, for the admin panel:
+      • subscriptions — every Pro plan activation (with Razorpay txn ids)
+      • boosts        — every paid listing boost (with Razorpay txn ids)
+    """
+    permission_classes = (IsAdminOperator,)
+
+    def get(self, request):
+        from apps.subscriptions.models import Subscription
+        from apps.subscriptions.plans import get_plan
+        from apps.listings.models import ListingBoostOrder
+
+        sub_rows = []
+        subscriptions = (
+            Subscription.objects
+            .select_related("user", "razorpay_order")
+            .order_by("-created_at")
+        )
+        for sub in subscriptions:
+            plan = get_plan(sub.plan)
+            rzp = getattr(sub, "razorpay_order", None)
+            sub_rows.append({
+                "id": str(sub.id),
+                "user_name": sub.user.name if sub.user_id else "—",
+                "user_phone": sub.user.phone if sub.user_id else "",
+                "user_email": (sub.user.email or "") if sub.user_id else "",
+                "plan": sub.plan,
+                "plan_name": plan.name if plan else sub.plan,
+                "amount_inr": sub.amount_inr,
+                "status": sub.status,
+                "provider": sub.provider,
+                "razorpay_order_id": rzp.razorpay_order_id if rzp else "",
+                "razorpay_payment_id": (
+                    rzp.razorpay_payment_id if rzp else sub.provider_payment_id
+                ),
+                "receipt": rzp.receipt if rzp else f"ocb_sub_{sub.id.hex[:12]}",
+                "invoice_number": (
+                    f"OCB-{sub.started_at:%Y%m%d}-"
+                    f"{str(sub.id).split('-')[0].upper()}"
+                ),
+                "started_at": sub.started_at,
+                "expires_at": sub.expires_at,
+                "created_at": sub.created_at,
+            })
+
+        boost_rows = []
+        boosts = (
+            ListingBoostOrder.objects
+            .select_related("user", "listing")
+            .order_by("-created_at")
+        )
+        for order in boosts:
+            boost_rows.append({
+                "id": str(order.id),
+                "user_name": order.user.name if order.user_id else "—",
+                "user_phone": order.user.phone if order.user_id else "",
+                "user_email": (order.user.email or "") if order.user_id else "",
+                "listing_id": str(order.listing_id) if order.listing_id else "",
+                "listing_title": order.listing.title if order.listing_id else "—",
+                "package": order.package,
+                "duration_days": order.duration_days,
+                "amount_inr": order.amount_inr,
+                "status": order.status,
+                "razorpay_order_id": order.razorpay_order_id,
+                "razorpay_payment_id": order.razorpay_payment_id,
+                "receipt": order.receipt,
+                "invoice_number": f"OCB-BOOST-{str(order.id).split('-')[0].upper()}",
+                "boosted_until": order.boosted_until,
+                "created_at": order.created_at,
+            })
+
+        sub_revenue = sum(r["amount_inr"] for r in sub_rows)
+        boost_revenue = sum(
+            r["amount_inr"] for r in boost_rows if r["status"] == "paid"
+        )
+
+        return Response({
+            "subscriptions": sub_rows,
+            "boosts": boost_rows,
+            "summary": {
+                "subscriptions_count": len(sub_rows),
+                "subscriptions_revenue": sub_revenue,
+                "boosts_count": len([r for r in boost_rows if r["status"] == "paid"]),
+                "boosts_revenue": boost_revenue,
+                "total_revenue": sub_revenue + boost_revenue,
+            },
+        })
+
+
 class AppSettingsView(generics.RetrieveUpdateAPIView):
     """GET / PATCH  /api/v1/admin-panel/settings"""
     serializer_class = AppSettingsSerializer
