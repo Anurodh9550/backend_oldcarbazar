@@ -1,10 +1,14 @@
 """Listings API."""
 import logging
+import uuid
+from datetime import timedelta
 
 import cloudinary
 import cloudinary.uploader
 from cloudinary.exceptions import Error as CloudinaryError
-from django.db.models import F
+from django.conf import settings as dj_settings
+from django.db.models import BooleanField, Case, F, Value, When
+from django.utils import timezone
 from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -15,10 +19,14 @@ logger = logging.getLogger(__name__)
 from apps.adminpanel.models import ActivityLog
 from apps.adminpanel.permissions import IsAdminOperator
 from apps.subscriptions.services import can_publish
+from .boost import BOOST_PACKAGES, get_boost_package
 from .filters import ListingFilter
-from .models import Listing
+from .models import Listing, ListingBoostOrder
 from .permissions import IsOwnerOrAdminOrReadOnly
 from .serializers import (
+    BoostOrderResponseSerializer,
+    BoostPackageSerializer,
+    CreateBoostOrderSerializer,
     CreateListingSerializer,
     FeatureSerializer,
     FlagSerializer,
@@ -27,7 +35,38 @@ from .serializers import (
     ModerationSerializer,
     UpdateListingSerializer,
     UpdateStatusSerializer,
+    VerifyBoostPaymentSerializer,
 )
+
+
+def _razorpay_configured() -> bool:
+    return bool(dj_settings.RAZORPAY_KEY_ID and dj_settings.RAZORPAY_KEY_SECRET)
+
+
+def _razorpay_client():
+    """Return an authenticated Razorpay client or raise a clear error."""
+    if not _razorpay_configured():
+        raise RuntimeError("Razorpay keys are not configured.")
+    try:
+        import razorpay
+    except ImportError as exc:  # pragma: no cover - dependency/runtime guard
+        raise RuntimeError("Razorpay SDK is not installed.") from exc
+    return razorpay.Client(
+        auth=(dj_settings.RAZORPAY_KEY_ID, dj_settings.RAZORPAY_KEY_SECRET)
+    )
+
+
+def _gateway_not_configured_response():
+    return Response(
+        {
+            "detail": (
+                "Payments are not configured yet. Add Razorpay keys "
+                "on the backend and redeploy."
+            ),
+            "code": "gateway_not_configured",
+        },
+        status=status.HTTP_503_SERVICE_UNAVAILABLE,
+    )
 
 
 class ListingViewSet(
@@ -53,8 +92,21 @@ class ListingViewSet(
     permission_classes = (IsOwnerOrAdminOrReadOnly,)
     filterset_class = ListingFilter
     search_fields = ("title", "brand", "model", "location", "description")
-    ordering_fields = ("created_at", "price_inr", "kms", "views")
-    ordering = ("-created_at",)
+    ordering_fields = (
+        "featured",
+        "inquiries_count",
+        "views",
+        "created_at",
+        "price_inr",
+        "kms",
+    )
+    ordering = (
+        "-featured",
+        "-is_boosted",
+        "-inquiries_count",
+        "-views",
+        "-created_at",
+    )
 
     def get_serializer_class(self):
         if self.action == "create":
@@ -77,6 +129,16 @@ class ListingViewSet(
 
     def get_queryset(self):
         qs = super().get_queryset()
+        # Annotate paid-boost state so the default ordering can rank active
+        # boosts just below admin-pinned featured cars. (A model property
+        # can't be used in order_by, so we mirror it as a DB expression.)
+        qs = qs.annotate(
+            is_boosted=Case(
+                When(boosted_until__gt=timezone.now(), then=Value(True)),
+                default=Value(False),
+                output_field=BooleanField(),
+            )
+        )
         # Admin list endpoint sees everything if explicitly asked.
         if self.action == "list" and not self.request.query_params.get("moderation"):
             qs = qs.filter(
@@ -228,6 +290,214 @@ class ListingViewSet(
         listing.status = ser.validated_data["status"]
         listing.save(update_fields=["status", "updated_at"])
         return Response(ListingSerializer(listing).data)
+
+    # ----------------- Paid boost actions ----------------- #
+
+    @action(
+        detail=False,
+        methods=["get"],
+        url_path="boost-packages",
+        permission_classes=[permissions.AllowAny],
+    )
+    def boost_packages(self, request):
+        """Public list of paid boost packages."""
+        data = [
+            BoostPackageSerializer(p.to_dict()).data
+            for p in BOOST_PACKAGES.values()
+        ]
+        return Response({"packages": data})
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="create-boost-order",
+        permission_classes=[permissions.IsAuthenticated],
+    )
+    def create_boost_order(self, request, pk=None):
+        """Create a Razorpay order to boost this listing."""
+        listing = self.get_object()
+        if listing.seller_id != request.user.id and not request.user.is_staff:
+            return Response(
+                {"detail": "You can only boost your own listing."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        ser = CreateBoostOrderSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        pkg = get_boost_package(ser.validated_data["package"])
+        if not pkg:
+            return Response(
+                {"detail": "Unknown boost package."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            client = _razorpay_client()
+        except RuntimeError:
+            return _gateway_not_configured_response()
+
+        receipt = f"ocbb_{request.user.id.hex[:10]}_{uuid.uuid4().hex[:10]}"
+        amount_paise = pkg.price_inr * 100
+        payload = {
+            "amount": amount_paise,
+            "currency": "INR",
+            "receipt": receipt,
+            "notes": {
+                "user_id": str(request.user.id),
+                "listing_id": str(listing.id),
+                "package": pkg.code,
+                "product": "old-car-bazar-boost",
+            },
+        }
+
+        try:
+            order = client.order.create(data=payload)
+        except Exception as exc:  # pragma: no cover - provider/network error
+            return Response(
+                {
+                    "detail": f"Could not create Razorpay order: {exc}",
+                    "code": "razorpay_order_failed",
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        ListingBoostOrder.objects.create(
+            user=request.user,
+            listing=listing,
+            package=pkg.code,
+            duration_days=pkg.duration_days,
+            amount_inr=pkg.price_inr,
+            razorpay_order_id=order["id"],
+            receipt=receipt,
+            raw_response=order,
+        )
+
+        data = {
+            "key_id": dj_settings.RAZORPAY_KEY_ID,
+            "order_id": order["id"],
+            "amount": amount_paise,
+            "amount_inr": pkg.price_inr,
+            "currency": "INR",
+            "package": pkg.to_dict(),
+            "listing_id": str(listing.id),
+            "name": request.user.name,
+            "email": request.user.email or "",
+            "contact": request.user.phone,
+        }
+        return Response(
+            BoostOrderResponseSerializer(data).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="verify-boost-payment",
+        permission_classes=[permissions.IsAuthenticated],
+    )
+    def verify_boost_payment(self, request, pk=None):
+        """Verify Razorpay response and activate the boost on this listing."""
+        listing = self.get_object()
+        ser = VerifyBoostPaymentSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        data = ser.validated_data
+
+        order = (
+            ListingBoostOrder.objects
+            .filter(
+                user=request.user,
+                listing=listing,
+                razorpay_order_id=data["razorpay_order_id"],
+            )
+            .first()
+        )
+        if not order:
+            return Response(
+                {"detail": "Boost order not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if order.status == ListingBoostOrder.Status.PAID:
+            return Response(self.get_serializer(listing).data)
+
+        try:
+            client = _razorpay_client()
+        except RuntimeError:
+            return _gateway_not_configured_response()
+
+        signature_payload = {
+            "razorpay_order_id": data["razorpay_order_id"],
+            "razorpay_payment_id": data["razorpay_payment_id"],
+            "razorpay_signature": data["razorpay_signature"],
+        }
+        try:
+            client.utility.verify_payment_signature(signature_payload)
+            payment = client.payment.fetch(data["razorpay_payment_id"])
+        except Exception as exc:
+            order.status = ListingBoostOrder.Status.FAILED
+            order.raw_response = {
+                **(order.raw_response or {}),
+                "verification_error": str(exc),
+            }
+            order.save(update_fields=["status", "raw_response", "updated_at"])
+            return Response(
+                {
+                    "detail": "Payment signature verification failed.",
+                    "code": "payment_verification_failed",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if (
+            payment.get("order_id") != order.razorpay_order_id
+            or payment.get("amount") != order.amount_inr * 100
+        ):
+            order.status = ListingBoostOrder.Status.FAILED
+            order.raw_response = {
+                **(order.raw_response or {}),
+                "payment": payment,
+                "verification_error": "amount_or_order_mismatch",
+            }
+            order.save(update_fields=["status", "raw_response", "updated_at"])
+            return Response(
+                {
+                    "detail": "Payment amount/order did not match.",
+                    "code": "payment_mismatch",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # Stack the boost: if the listing is still boosted, extend from its
+        # current end date; otherwise start the window from now.
+        now = timezone.now()
+        base = (
+            listing.boosted_until
+            if listing.boosted_until and listing.boosted_until > now
+            else now
+        )
+        listing.boosted_until = base + timedelta(days=order.duration_days)
+        listing.save(update_fields=["boosted_until", "updated_at"])
+
+        order.status = ListingBoostOrder.Status.PAID
+        order.razorpay_payment_id = data["razorpay_payment_id"]
+        order.boosted_until = listing.boosted_until
+        order.raw_response = {
+            **(order.raw_response or {}),
+            "payment": payment,
+        }
+        order.save(update_fields=[
+            "status", "razorpay_payment_id", "boosted_until",
+            "raw_response", "updated_at",
+        ])
+
+        ActivityLog.objects.create(
+            type="listing-featured",
+            message=(
+                f"Listing boosted via {order.package} until "
+                f"{listing.boosted_until:%Y-%m-%d}"
+            ),
+            target=str(listing.id),
+        )
+        return Response(self.get_serializer(listing).data)
 
     # ----------- Admin-only moderation actions ----------- #
 

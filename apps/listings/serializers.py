@@ -60,6 +60,7 @@ class ListingSerializer(serializers.ModelSerializer):
     """Read-only output serializer (with nested photos + seller name)."""
     photos = ListingPhotoSerializer(many=True, read_only=True)
     seller_id = serializers.UUIDField(source="seller.id", read_only=True)
+    is_boosted = serializers.BooleanField(read_only=True)
 
     class Meta:
         model = Listing
@@ -74,7 +75,7 @@ class ListingSerializer(serializers.ModelSerializer):
             "description", "features",
             "cover_image", "photos",
             "status", "moderation", "rejected_reason",
-            "featured", "flagged", "flag_reason",
+            "featured", "boosted_until", "is_boosted", "flagged", "flag_reason",
             "whatsapp", "is_seed",
             "views", "inquiries_count",
             "created_at", "updated_at",
@@ -332,3 +333,36 @@ class FlagSerializer(serializers.Serializer):
 
 class UpdateStatusSerializer(serializers.Serializer):
     status = serializers.ChoiceField(choices=Listing.Status.choices)
+
+
+# ---------- Paid boost ---------- #
+
+class BoostPackageSerializer(serializers.Serializer):
+    code = serializers.CharField()
+    name = serializers.CharField()
+    price_inr = serializers.IntegerField()
+    duration_days = serializers.IntegerField()
+    perks = serializers.ListField(child=serializers.CharField())
+
+
+class CreateBoostOrderSerializer(serializers.Serializer):
+    package = serializers.CharField()
+
+
+class BoostOrderResponseSerializer(serializers.Serializer):
+    key_id = serializers.CharField()
+    order_id = serializers.CharField()
+    amount = serializers.IntegerField()
+    amount_inr = serializers.IntegerField()
+    currency = serializers.CharField()
+    package = BoostPackageSerializer()
+    listing_id = serializers.CharField()
+    name = serializers.CharField()
+    email = serializers.EmailField(allow_blank=True, allow_null=True)
+    contact = serializers.CharField()
+
+
+class VerifyBoostPaymentSerializer(serializers.Serializer):
+    razorpay_order_id = serializers.CharField()
+    razorpay_payment_id = serializers.CharField()
+    razorpay_signature = serializers.CharField()
