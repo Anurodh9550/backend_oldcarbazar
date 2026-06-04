@@ -455,10 +455,50 @@ def _build_invoice_payload(sub: Subscription, *, user) -> dict:
     }
 
 
+def _build_boost_invoice_payload(order, *, user) -> dict:
+    """Invoice payload for one paid listing-boost order."""
+    from apps.listings.boost import get_boost_package
+
+    pkg = get_boost_package(order.package)
+    invoice_number = f"OCB-BOOST-{str(order.id).split('-')[0].upper()}"
+    return {
+        "boost_order_id": str(order.id),
+        "invoice_number": invoice_number,
+        "receipt": order.receipt,
+        "issued_at": order.created_at,
+        "package": order.package,
+        "package_name": pkg.name if pkg else order.package,
+        "duration_days": order.duration_days,
+        "amount_inr": order.amount_inr,
+        "currency": "INR",
+        "status": order.status,
+        "boosted_until": order.boosted_until,
+        "provider": "razorpay",
+        "razorpay_order_id": order.razorpay_order_id,
+        "razorpay_payment_id": order.razorpay_payment_id,
+        "listing_id": str(order.listing_id) if order.listing_id else "",
+        "listing_title": order.listing.title if order.listing_id else "—",
+        "customer": {
+            "name": user.name,
+            "email": user.email or "",
+            "phone": user.phone,
+            "city": user.city or "",
+        },
+        "seller": {
+            "name": "Old Car Bazar",
+            "address": "Old Car Bazar, India",
+            "email": "support@oldcarbazar.com",
+            "website": "https://oldcarbazar.com",
+        },
+    }
+
+
 class MySubscriptionsView(APIView):
     permission_classes = (permissions.IsAuthenticated,)
 
     def get(self, request):
+        from apps.listings.models import ListingBoostOrder
+
         qs = (
             Subscription.objects
             .filter(user=request.user)
@@ -466,9 +506,22 @@ class MySubscriptionsView(APIView):
             .order_by("-created_at")
         )
         invoices = [_build_invoice_payload(sub, user=request.user) for sub in qs]
+
+        boost_qs = (
+            ListingBoostOrder.objects
+            .filter(user=request.user, status=ListingBoostOrder.Status.PAID)
+            .select_related("listing")
+            .order_by("-created_at")
+        )
+        boost_invoices = [
+            _build_boost_invoice_payload(order, user=request.user)
+            for order in boost_qs
+        ]
+
         return Response({
             "subscriptions": SubscriptionSerializer(qs, many=True).data,
             "invoices": invoices,
+            "boost_invoices": boost_invoices,
         })
 
 
