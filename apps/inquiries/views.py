@@ -4,13 +4,16 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from apps.adminpanel.permissions import IsAdminOperator
-from .models import Inquiry, Offer, TestDriveBooking
+from .models import Inquiry, LoanInquiry, Offer, TestDriveBooking
 from .serializers import (
     CreateInquirySerializer,
+    CreateLoanInquirySerializer,
     CreateOfferSerializer,
     CreateTestDriveSerializer,
     InquirySerializer,
     InquiryStatusSerializer,
+    LoanInquirySerializer,
+    LoanInquiryStatusSerializer,
     OfferResponseSerializer,
     OfferSerializer,
     TestDriveBookingSerializer,
@@ -78,6 +81,57 @@ class InquiryViewSet(
         inquiry.status = ser.validated_data["status"]
         inquiry.save(update_fields=["status", "updated_at"])
         return Response(InquirySerializer(inquiry).data)
+
+
+class LoanInquiryViewSet(
+    mixins.CreateModelMixin,
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.GenericViewSet,
+):
+    """Used-car loan applications.
+
+    - POST /api/v1/loan-inquiries/             public (anyone can apply)
+    - GET  /api/v1/loan-inquiries/             admin-only list
+    - GET  /api/v1/loan-inquiries/<id>/        admin-only detail
+    - POST /api/v1/loan-inquiries/<id>/status/ admin-only status update
+    - DELETE /api/v1/loan-inquiries/<id>/      admin-only delete
+    """
+
+    queryset = LoanInquiry.objects.all()
+    serializer_class = LoanInquirySerializer
+    filterset_fields = ("status", "bank_name", "loan_partner", "employment_type", "city")
+    search_fields = ("full_name", "mobile", "email", "city")
+    ordering_fields = ("created_at",)
+    ordering = ("-created_at",)
+
+    def get_permissions(self):
+        if self.action == "create":
+            return [permissions.AllowAny()]
+        return [IsAdminOperator()]
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return CreateLoanInquirySerializer
+        return LoanInquirySerializer
+
+    def create(self, request, *args, **kwargs):
+        ser = self.get_serializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        inquiry = ser.save()
+        return Response(
+            LoanInquirySerializer(inquiry).data, status=status.HTTP_201_CREATED
+        )
+
+    @action(detail=True, methods=["post"])
+    def status(self, request, pk=None):
+        inquiry = self.get_object()
+        ser = LoanInquiryStatusSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        inquiry.status = ser.validated_data["status"]
+        inquiry.save(update_fields=["status", "updated_at"])
+        return Response(LoanInquirySerializer(inquiry).data)
 
 
 class TestDriveBookingViewSet(

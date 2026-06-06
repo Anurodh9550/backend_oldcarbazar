@@ -118,6 +118,59 @@ class TestDriveBooking(models.Model):
         return f"{self.buyer_name} → {self.listing_title} ({self.scheduled_at:%d %b})"
 
 
+class LoanInquiry(models.Model):
+    """A used-car loan application submitted from the public Loan section.
+
+    Unlike :class:`Inquiry` (buyer ↔ seller about a listing), this captures a
+    lead for our loan-assistance partners (Paisabazaar, BankBazaar, IndiaLends)
+    against a selected bank. It is not tied to a listing.
+    """
+
+    class Status(models.TextChoices):
+        NEW = "new", "New"
+        CONTACTED = "contacted", "Contacted"
+        APPROVED = "approved", "Approved"
+        REJECTED = "rejected", "Rejected"
+
+    class Employment(models.TextChoices):
+        SALARIED = "salaried", "Salaried"
+        SELF_EMPLOYED = "self_employed", "Self-Employed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    bank_name = models.CharField(max_length=80, db_index=True)
+    loan_partner = models.CharField(max_length=80, db_index=True)
+
+    full_name = models.CharField(max_length=120)
+    mobile = models.CharField(max_length=15, db_index=True)
+    email = models.EmailField()
+    city = models.CharField(max_length=80)
+
+    monthly_income = models.PositiveIntegerField()
+    employment_type = models.CharField(
+        max_length=20,
+        choices=Employment.choices,
+        default=Employment.SALARIED,
+    )
+    car_budget = models.CharField(max_length=80, blank=True, default="")
+    message = models.TextField(blank=True, default="")
+
+    status = models.CharField(
+        max_length=10, choices=Status.choices, default=Status.NEW, db_index=True
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        verbose_name = "Loan inquiry"
+        verbose_name_plural = "Loan inquiries"
+
+    def __str__(self) -> str:
+        return f"{self.full_name} → {self.bank_name} ({self.loan_partner})"
+
+
 class Offer(models.Model):
     """A price offer from a buyer to a seller for a specific listing."""
 

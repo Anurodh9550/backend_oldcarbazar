@@ -1,5 +1,10 @@
 from rest_framework.routers import DefaultRouter
-from .views import InquiryViewSet, OfferViewSet, TestDriveBookingViewSet
+from .views import (
+    InquiryViewSet,
+    LoanInquiryViewSet,
+    OfferViewSet,
+    TestDriveBookingViewSet,
+)
 
 router = DefaultRouter()
 router.register("", InquiryViewSet, basename="inquiry")
@@ -13,5 +18,9 @@ test_drive_router.register("", TestDriveBookingViewSet, basename="test-drive")
 offer_router = DefaultRouter()
 offer_router.register("", OfferViewSet, basename="offer")
 
+loan_inquiry_router = DefaultRouter()
+loan_inquiry_router.register("", LoanInquiryViewSet, basename="loan-inquiry")
+
 test_drive_urls = test_drive_router.urls
 offer_urls = offer_router.urls
+loan_inquiry_urls = loan_inquiry_router.urls

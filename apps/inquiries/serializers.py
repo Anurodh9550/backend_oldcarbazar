@@ -4,7 +4,7 @@ from django.db.models import F
 from rest_framework import serializers
 
 from apps.listings.models import Listing
-from .models import Inquiry, Offer, TestDriveBooking
+from .models import Inquiry, LoanInquiry, Offer, TestDriveBooking
 
 
 class InquirySerializer(serializers.ModelSerializer):
@@ -240,3 +240,69 @@ class OfferResponseSerializer(serializers.Serializer):
                 {"counter_amount": "Counter amount is required when countering."}
             )
         return data
+
+
+# --------------------------------------------------------------------------- #
+# Loan inquiries (public used-car loan applications)
+# --------------------------------------------------------------------------- #
+
+
+class LoanInquirySerializer(serializers.ModelSerializer):
+    employment_type_label = serializers.CharField(
+        source="get_employment_type_display", read_only=True
+    )
+    status_label = serializers.CharField(
+        source="get_status_display", read_only=True
+    )
+
+    class Meta:
+        model = LoanInquiry
+        fields = (
+            "id",
+            "bank_name",
+            "loan_partner",
+            "full_name",
+            "mobile",
+            "email",
+            "city",
+            "monthly_income",
+            "employment_type",
+            "employment_type_label",
+            "car_budget",
+            "message",
+            "status",
+            "status_label",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("id", "status", "created_at", "updated_at")
+
+
+class CreateLoanInquirySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LoanInquiry
+        fields = (
+            "bank_name",
+            "loan_partner",
+            "full_name",
+            "mobile",
+            "email",
+            "city",
+            "monthly_income",
+            "employment_type",
+            "car_budget",
+            "message",
+        )
+
+    def validate_mobile(self, value):
+        return _validate_indian_phone(value)
+
+    def validate_full_name(self, value):
+        cleaned = value.strip()
+        if len(cleaned) < 2:
+            raise serializers.ValidationError("Please enter your full name.")
+        return cleaned
+
+
+class LoanInquiryStatusSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(choices=LoanInquiry.Status.choices)
