@@ -98,6 +98,9 @@ class AppSettings(models.Model):
     support_phone = models.CharField(max_length=32, default="+91 98765 43210")
     brand_color = models.CharField(max_length=16, default="#f75d34")
     loan_tools_content = models.JSONField(blank=True, null=True)
+    # Promotional ad banners shown across the website AND the mobile app.
+    # Each entry is a plain dict (see web `lib/ads.ts` / app `lib/api.ts` Ad type).
+    ads = models.JSONField(default=list, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

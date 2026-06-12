@@ -258,6 +258,41 @@ class LoanToolsContentView(generics.GenericAPIView):
         return Response({"content": settings_row.loan_tools_content})
 
 
+class AdsView(generics.GenericAPIView):
+    """GET /api/v1/ads/ — public ad banners for the website + mobile app.
+
+    Only enabled ads are returned. Optional query params let a client narrow
+    results without doing the filtering itself:
+      • ?platform=web|app   → only ads targeting that platform (or "both")
+      • ?page=home|all|...  → only ads whose target pages include this page
+    """
+
+    permission_classes = (permissions.AllowAny,)
+
+    def get(self, request):
+        ads = AppSettings.singleton().ads or []
+        if not isinstance(ads, list):
+            ads = []
+
+        enabled = [ad for ad in ads if isinstance(ad, dict) and ad.get("enabled")]
+
+        platform = request.query_params.get("platform")
+        if platform:
+            enabled = [
+                ad for ad in enabled
+                if (ad.get("platform") or "both") in (platform, "both")
+            ]
+
+        page = request.query_params.get("page")
+        if page:
+            enabled = [
+                ad for ad in enabled
+                if page in (ad.get("pages") or []) or "all" in (ad.get("pages") or [])
+            ]
+
+        return Response({"ads": enabled})
+
+
 class ActivityLogViewSet(
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
