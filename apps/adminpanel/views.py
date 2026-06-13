@@ -40,6 +40,133 @@ matters, give general guidance and suggest checking official documents or
 contacting support for final confirmation.
 """
 
+# Tried in order until one model responds (older names kept as fallback).
+GEMINI_MODEL_FALLBACKS = (
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
+)
+
+
+def _assistant_rule_reply(question: str) -> str | None:
+    """Fast answers that do not need the LLM (support contact, etc.)."""
+    q = question.lower()
+    settings = AppSettings.singleton()
+    contact_triggers = (
+        "contact number",
+        "phone number",
+        "mobile number",
+        "call kare",
+        "call kar",
+        "support number",
+        "helpline",
+        "customer care",
+        "contact",
+        "email",
+        "support",
+    )
+    if any(trigger in q for trigger in contact_triggers):
+        return (
+            f"Old Car Bazar support:\n"
+            f"Phone: {settings.support_phone}\n"
+            f"Email: {settings.support_email}\n"
+            f"Website par Contact / Help section bhi dekh sakte ho."
+        )
+    return None
+
+
+def _gemini_key_hint(api_key: str) -> str | None:
+    """Warn when the env key looks like the wrong Google credential type."""
+    if api_key.startswith("AQ."):
+        return (
+            "Gemini API key galat type ki lag rahi hai (GCP service key). "
+            "Google AI Studio se nayi key banayein — https://aistudio.google.com/app/apikey — "
+            "key `AIza...` se start honi chahiye. Render env me GEMINI_API_KEY update karein."
+        )
+    if not api_key.startswith("AIza"):
+        return (
+            "Gemini API key invalid lag rahi hai. "
+            "https://aistudio.google.com/app/apikey se nayi key lein (AIza... format) "
+            "aur hosting env me GEMINI_API_KEY set karein."
+        )
+    return None
+
+
+def _gemini_models_to_try() -> list[str]:
+    preferred = os.environ.get("GEMINI_MODEL", "").strip()
+    models: list[str] = []
+    if preferred:
+        models.append(preferred)
+    for name in GEMINI_MODEL_FALLBACKS:
+        if name not in models:
+            models.append(name)
+    return models
+
+
+def _call_gemini(api_key: str, question: str) -> tuple[str | None, str | None]:
+    """Call Gemini generateContent. Returns (reply, error_message)."""
+    payload = {
+        "systemInstruction": {
+            "parts": [{"text": ASSISTANT_CONTEXT.strip()}],
+        },
+        "contents": [
+            {"role": "user", "parts": [{"text": question}]},
+        ],
+        "generationConfig": {
+            "temperature": 0.35,
+            "maxOutputTokens": 450,
+        },
+    }
+    body = json.dumps(payload).encode("utf-8")
+    last_error: str | None = None
+    models = _gemini_models_to_try()
+
+    for model in models:
+        url = (
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{model}:generateContent"
+        )
+        req = urlrequest.Request(
+            url,
+            data=body,
+            headers={
+                "Content-Type": "application/json",
+                "x-goog-api-key": api_key,
+            },
+            method="POST",
+        )
+        try:
+            with urlrequest.urlopen(req, timeout=25) as res:
+                data = json.loads(res.read().decode("utf-8"))
+        except urlerror.HTTPError as exc:
+            err_body = exc.read().decode("utf-8", errors="replace")
+            try:
+                err_json = json.loads(err_body)
+                last_error = str(err_json.get("error", {}).get("message", err_body))
+            except json.JSONDecodeError:
+                last_error = err_body[:240] or str(exc)
+            # Model missing / deprecated — try the next one.
+            if exc.code in (400, 404) and model != models[-1]:
+                continue
+            break
+        except (urlerror.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            last_error = str(exc)
+            break
+        else:
+            candidates = data.get("candidates") or []
+            if candidates:
+                parts = candidates[0].get("content", {}).get("parts", [])
+                reply = "\n".join(
+                    part.get("text", "")
+                    for part in parts
+                    if isinstance(part, dict)
+                ).strip()
+                if reply:
+                    return reply, None
+            last_error = "Empty response from Gemini."
+
+    return None, last_error
+
 
 class AssistantView(generics.GenericAPIView):
     """POST /api/v1/assistant/ — AI help assistant for website + mobile app."""
@@ -54,6 +181,10 @@ class AssistantView(generics.GenericAPIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        rule_reply = _assistant_rule_reply(question)
+        if rule_reply:
+            return Response({"reply": rule_reply, "configured": True})
+
         api_key = os.environ.get("GEMINI_API_KEY", "").strip()
         if not api_key:
             return Response({
@@ -65,60 +196,30 @@ class AssistantView(generics.GenericAPIView):
                 "configured": False,
             })
 
-        payload = {
-            "contents": [
-                {
-                    "role": "user",
-                    "parts": [{"text": f"{ASSISTANT_CONTEXT}\n\nUser question: {question}"}],
-                }
-            ],
-            "generationConfig": {
-                "temperature": 0.35,
-                "maxOutputTokens": 450,
+        key_hint = _gemini_key_hint(api_key)
+        if key_hint:
+            return Response({"reply": key_hint, "configured": False})
+
+        reply, gemini_error = _call_gemini(api_key, question)
+        if reply:
+            return Response({"reply": reply, "configured": True})
+
+        from django.conf import settings as django_settings
+
+        detail = ""
+        if django_settings.DEBUG and gemini_error:
+            detail = f" ({gemini_error})"
+
+        return Response(
+            {
+                "reply": (
+                    "AI service abhi respond nahi kar pa raha. "
+                    "Thodi der baad try karein ya support se contact karein."
+                    f"{detail}"
+                )
             },
-        }
-        endpoint = (
-            "https://generativelanguage.googleapis.com/v1beta/models/"
-            f"gemini-1.5-flash:generateContent?key={api_key}"
+            status=status.HTTP_502_BAD_GATEWAY,
         )
-        body = json.dumps(payload).encode("utf-8")
-        req = urlrequest.Request(
-            endpoint,
-            data=body,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-
-        try:
-            with urlrequest.urlopen(req, timeout=20) as res:
-                data = json.loads(res.read().decode("utf-8"))
-        except (urlerror.HTTPError, urlerror.URLError, TimeoutError, json.JSONDecodeError):
-            return Response(
-                {
-                    "reply": (
-                        "AI service abhi respond nahi kar pa raha. "
-                        "Thodi der baad try karein ya support se contact karein."
-                    )
-                },
-                status=status.HTTP_502_BAD_GATEWAY,
-            )
-
-        reply = ""
-        candidates = data.get("candidates") or []
-        if candidates:
-            parts = (
-                candidates[0]
-                .get("content", {})
-                .get("parts", [])
-            )
-            reply = "\n".join(
-                part.get("text", "") for part in parts if isinstance(part, dict)
-            ).strip()
-
-        if not reply:
-            reply = "Sorry, mujhe iska clear answer nahi mila. Question thoda aur detail me bhej sakte ho?"
-
-        return Response({"reply": reply, "configured": True})
 
 
 class AdminLoginView(generics.GenericAPIView):
