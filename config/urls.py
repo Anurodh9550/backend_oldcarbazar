@@ -8,7 +8,7 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
 )
 
-from apps.adminpanel.views import AdsView, LoanToolsContentView
+from apps.adminpanel.views import AdsView, AssistantView, LoanToolsContentView
 
 from apps.inquiries.urls import loan_inquiry_urls, offer_urls, test_drive_urls
 from apps.users.urls import dealer_urls
@@ -30,6 +30,7 @@ api_v1 = [
         name="loan-tools-content",
     ),
     path("ads/", AdsView.as_view(), name="ads"),
+    path("assistant/", AssistantView.as_view(), name="assistant"),
 ]
 
 urlpatterns = [

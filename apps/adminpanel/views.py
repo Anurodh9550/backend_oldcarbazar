@@ -1,4 +1,8 @@
 """Admin panel APIs: auth, dashboard, settings, activity, users."""
+import json
+import os
+from urllib import error as urlerror, request as urlrequest
+
 from django.contrib.auth import get_user_model
 from django.db.models import Count, Q
 from django.utils import timezone
@@ -22,6 +26,99 @@ from .serializers import (
 )
 
 User = get_user_model()
+
+
+ASSISTANT_CONTEXT = """
+You are Old Car Bazar's helpful AI assistant for India.
+Answer in simple Hindi/Hinglish by default, unless the user asks in English.
+Help users with buying used cars, selling a car, pricing, valuation, EMI,
+loan eligibility, RC transfer, insurance, test drives, dealer discovery,
+saved cars, subscriptions, featured/boosted listings, and platform support.
+Keep answers concise, practical, and friendly. Do not claim a listing is
+verified unless the platform data or user says it is. For legal/finance
+matters, give general guidance and suggest checking official documents or
+contacting support for final confirmation.
+"""
+
+
+class AssistantView(generics.GenericAPIView):
+    """POST /api/v1/assistant/ — AI help assistant for website + mobile app."""
+
+    permission_classes = (permissions.AllowAny,)
+
+    def post(self, request):
+        question = str(request.data.get("message") or "").strip()
+        if not question:
+            return Response(
+                {"reply": "Please type your question first."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+        if not api_key:
+            return Response({
+                "reply": (
+                    "AI assistant ready hai, bas backend me GEMINI_API_KEY "
+                    "set karna baaki hai. Tab tak aap Buy, Sell, EMI, Loan, "
+                    "RC Transfer ya Support se related question pooch sakte ho."
+                ),
+                "configured": False,
+            })
+
+        payload = {
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": f"{ASSISTANT_CONTEXT}\n\nUser question: {question}"}],
+                }
+            ],
+            "generationConfig": {
+                "temperature": 0.35,
+                "maxOutputTokens": 450,
+            },
+        }
+        endpoint = (
+            "https://generativelanguage.googleapis.com/v1beta/models/"
+            f"gemini-1.5-flash:generateContent?key={api_key}"
+        )
+        body = json.dumps(payload).encode("utf-8")
+        req = urlrequest.Request(
+            endpoint,
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+
+        try:
+            with urlrequest.urlopen(req, timeout=20) as res:
+                data = json.loads(res.read().decode("utf-8"))
+        except (urlerror.HTTPError, urlerror.URLError, TimeoutError, json.JSONDecodeError):
+            return Response(
+                {
+                    "reply": (
+                        "AI service abhi respond nahi kar pa raha. "
+                        "Thodi der baad try karein ya support se contact karein."
+                    )
+                },
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+
+        reply = ""
+        candidates = data.get("candidates") or []
+        if candidates:
+            parts = (
+                candidates[0]
+                .get("content", {})
+                .get("parts", [])
+            )
+            reply = "\n".join(
+                part.get("text", "") for part in parts if isinstance(part, dict)
+            ).strip()
+
+        if not reply:
+            reply = "Sorry, mujhe iska clear answer nahi mila. Question thoda aur detail me bhej sakte ho?"
+
+        return Response({"reply": reply, "configured": True})
 
 
 class AdminLoginView(generics.GenericAPIView):

@@ -12,6 +12,70 @@ from django.core.management.base import BaseCommand
 from apps.adminpanel.models import Admin, AppSettings
 
 
+SEED_ADS = [
+    {
+        "id": "demo-ad-1",
+        "enabled": True,
+        "name": "Demo — Featured cars",
+        "title": "Big Savings on Used Cars",
+        "description": "Up to ₹50,000 off on verified cars",
+        "imageUrl": "https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&w=1000&q=70",
+        "videoUrl": "",
+        "ctaLabel": "Browse",
+        "ctaHref": "/used-cars",
+        "pages": ["home"],
+        "placement": "top",
+        "style": "image",
+        "platform": "both",
+    },
+    {
+        "id": "demo-ad-video",
+        "enabled": True,
+        "name": "Demo — Video banner",
+        "title": "Watch Our Cars in Action",
+        "description": "Real footage of inspected cars",
+        "imageUrl": "https://images.unsplash.com/photo-1494976388531-d1058494cdd8?auto=format&fit=crop&w=1000&q=70",
+        "videoUrl": "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4",
+        "ctaLabel": "Watch",
+        "ctaHref": "/used-cars",
+        "pages": ["home"],
+        "placement": "top",
+        "style": "video",
+        "platform": "both",
+    },
+    {
+        "id": "demo-ad-2",
+        "enabled": True,
+        "name": "Demo — Sell your car",
+        "title": "Sell Your Car at Best Price",
+        "description": "List free, reach thousands of buyers",
+        "imageUrl": "https://images.unsplash.com/photo-1552519507-da3b142c6e3d?auto=format&fit=crop&w=1000&q=70",
+        "videoUrl": "",
+        "ctaLabel": "Sell Now",
+        "ctaHref": "/sell-car",
+        "pages": ["home"],
+        "placement": "top",
+        "style": "image",
+        "platform": "both",
+    },
+    {
+        "id": "demo-ad-3",
+        "enabled": True,
+        "name": "Demo — Assured cars",
+        "title": "Old Car Bazar Assured",
+        "description": "200-point inspected, warranty included",
+        "imageUrl": "https://images.unsplash.com/photo-1568605117036-5fe5e7bab0b7?auto=format&fit=crop&w=1000&q=70",
+        "videoUrl": "",
+        "ctaLabel": "Explore",
+        "ctaHref": "/assured",
+        "pages": ["home"],
+        "placement": "top",
+        "style": "image",
+        "platform": "both",
+    },
+]
+
+
 SEED_ADMINS = [
     {
         "email": "admin@oldcarbazar.com",
@@ -85,7 +149,16 @@ class Command(BaseCommand):
                     f"  · admin {email} already exists — skipping"
                 )
 
-        AppSettings.singleton()
+        settings = AppSettings.singleton()
+        if not settings.ads:
+            settings.ads = SEED_ADS
+            settings.save(update_fields=["ads"])
+            self.stdout.write(
+                self.style.SUCCESS(f"  + seeded {len(SEED_ADS)} demo ads")
+            )
+        else:
+            self.stdout.write("  · ads already present — skipping ad seed")
+
         self.stdout.write(
             self.style.SUCCESS(
                 f"Done. created={created} updated={updated} skipped={skipped}"
