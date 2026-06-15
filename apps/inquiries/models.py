@@ -58,6 +58,55 @@ class Inquiry(models.Model):
         return f"{self.buyer_name} → {self.listing_title}"
 
 
+class ListingView(models.Model):
+    """A view-lead: a logged-in customer opened a seller's listing.
+
+    Unlike the aggregate `Listing.views` counter (which counts every hit,
+    including anonymous ones), this records *who* looked at a car so the
+    dealer can follow up. We only create a row for authenticated viewers who
+    are not the seller, and de-duplicate repeat views within a short window
+    so one curious buyer does not flood the dealer's leads.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    listing = models.ForeignKey(
+        "listings.Listing", on_delete=models.CASCADE, related_name="view_leads"
+    )
+    listing_title = models.CharField(max_length=200)
+    listing_price = models.CharField(max_length=40, blank=True, default="")
+
+    viewer = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        related_name="listing_views", null=True, blank=True,
+    )
+    viewer_name = models.CharField(max_length=120, blank=True, default="")
+    viewer_phone = models.CharField(max_length=15, blank=True, default="")
+    viewer_email = models.EmailField(blank=True, null=True)
+
+    seller = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL,
+        related_name="listing_views_received", null=True, blank=True,
+    )
+    seller_name = models.CharField(max_length=120, blank=True, default="")
+    city = models.CharField(max_length=80, blank=True, default="")
+
+    view_count = models.PositiveIntegerField(default=1)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("-updated_at",)
+        verbose_name = "Listing view lead"
+        verbose_name_plural = "Listing view leads"
+        indexes = [
+            models.Index(fields=["seller", "-updated_at"]),
+            models.Index(fields=["listing", "viewer"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.viewer_name or 'Guest'} viewed {self.listing_title}"
+
+
 class TestDriveBooking(models.Model):
     """A buyer-requested test drive for a listing."""
 

@@ -11,6 +11,7 @@ from drf_spectacular.views import (
 from apps.adminpanel.views import AdsView, AssistantView, LoanToolsContentView
 
 from apps.inquiries.urls import loan_inquiry_urls, offer_urls, test_drive_urls
+from apps.inquiries.views import SellerLeadsView
 from apps.users.urls import dealer_urls
 
 api_v1 = [
@@ -18,6 +19,7 @@ api_v1 = [
     path("cities/", include("apps.cities.urls")),
     path("listings/", include("apps.listings.urls")),
     path("inquiries/", include("apps.inquiries.urls")),
+    path("leads/mine/", SellerLeadsView.as_view(), name="seller-leads"),
     path("test-drives/", include((test_drive_urls, "test-drives"))),
     path("offers/", include((offer_urls, "offers"))),
     path("loan-inquiries/", include((loan_inquiry_urls, "loan-inquiries"))),

@@ -192,7 +192,51 @@ class ListingViewSet(
         instance = self.get_object()
         Listing.objects.filter(pk=instance.pk).update(views=F("views") + 1)
         instance.refresh_from_db(fields=["views"])
+        self._record_view_lead(request, instance)
         return Response(self.get_serializer(instance).data)
+
+    @staticmethod
+    def _record_view_lead(request, listing):
+        """Record a view-lead so the seller can see who looked at the car.
+
+        Only for logged-in viewers who are not the seller. Repeat views by the
+        same user within 6 hours bump the existing row's count instead of
+        creating a new lead, so one buyer browsing twice is not double-counted.
+        """
+        user = getattr(request, "user", None)
+        if not user or not user.is_authenticated:
+            return
+        if listing.seller_id and listing.seller_id == user.id:
+            return
+        try:
+            from apps.inquiries.models import ListingView
+
+            window_start = timezone.now() - timedelta(hours=6)
+            recent = (
+                ListingView.objects
+                .filter(listing=listing, viewer=user, updated_at__gte=window_start)
+                .first()
+            )
+            if recent:
+                ListingView.objects.filter(pk=recent.pk).update(
+                    view_count=F("view_count") + 1,
+                    updated_at=timezone.now(),
+                )
+                return
+            ListingView.objects.create(
+                listing=listing,
+                listing_title=listing.title,
+                listing_price=listing.price_label,
+                viewer=user,
+                viewer_name=getattr(user, "name", "") or "",
+                viewer_phone=getattr(user, "phone", "") or "",
+                viewer_email=getattr(user, "email", "") or None,
+                seller=listing.seller,
+                seller_name=listing.seller_name,
+                city=listing.location,
+            )
+        except Exception:  # pragma: no cover - view-lead must never break detail
+            logger.exception("Failed to record view lead for listing %s", listing.pk)
 
     @action(detail=False, methods=["get"], permission_classes=[permissions.IsAuthenticated])
     def mine(self, request):

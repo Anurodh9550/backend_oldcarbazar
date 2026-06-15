@@ -2,9 +2,10 @@ from django.db.models import Q
 from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from apps.adminpanel.permissions import IsAdminOperator
-from .models import Inquiry, LoanInquiry, Offer, TestDriveBooking
+from .models import Inquiry, ListingView, LoanInquiry, Offer, TestDriveBooking
 from .serializers import (
     CreateInquirySerializer,
     CreateLoanInquirySerializer,
@@ -81,6 +82,161 @@ class InquiryViewSet(
         inquiry.status = ser.validated_data["status"]
         inquiry.save(update_fields=["status", "updated_at"])
         return Response(InquirySerializer(inquiry).data)
+
+
+def _iso(dt):
+    return dt.isoformat() if dt else None
+
+
+class SellerLeadsView(APIView):
+    """Unified leads feed for the logged-in seller/dealer.
+
+    Combines every signal of buyer interest on the seller's own listings:
+    view-leads (who looked), inquiries, price offers and test-drive requests.
+    Returns:
+      - `summary`     : headline counts
+      - `per_listing` : interest broken down by product (which car)
+      - `leads`       : a single recent, sorted feed of all lead events
+    """
+
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def get(self, request):
+        user = request.user
+
+        views = list(
+            ListingView.objects.filter(seller=user).order_by("-updated_at")[:200]
+        )
+        inquiries = list(
+            Inquiry.objects.filter(seller=user).order_by("-created_at")[:200]
+        )
+        offers = list(
+            Offer.objects.filter(seller=user).order_by("-created_at")[:200]
+        )
+        test_drives = list(
+            TestDriveBooking.objects.filter(seller=user).order_by("-created_at")[:200]
+        )
+
+        leads: list[dict] = []
+
+        for v in views:
+            leads.append({
+                "id": str(v.id),
+                "type": "view",
+                "listing_id": str(v.listing_id) if v.listing_id else "",
+                "listing_title": v.listing_title,
+                "listing_price": v.listing_price,
+                "name": v.viewer_name or "Guest viewer",
+                "phone": v.viewer_phone or "",
+                "email": v.viewer_email or "",
+                "message": (
+                    f"Viewed this car {v.view_count} time(s)"
+                    if v.view_count > 1
+                    else "Viewed this car"
+                ),
+                "amount": None,
+                "status": "new",
+                "city": v.city or "",
+                "created_at": _iso(v.updated_at),
+            })
+
+        for i in inquiries:
+            leads.append({
+                "id": str(i.id),
+                "type": i.channel if i.channel in ("whatsapp", "call") else "inquiry",
+                "listing_id": str(i.listing_id) if i.listing_id else "",
+                "listing_title": i.listing_title,
+                "listing_price": i.listing_price,
+                "name": i.buyer_name,
+                "phone": i.buyer_phone,
+                "email": i.buyer_email or "",
+                "message": i.message,
+                "amount": None,
+                "status": i.status,
+                "city": i.city or "",
+                "created_at": _iso(i.created_at),
+            })
+
+        for o in offers:
+            leads.append({
+                "id": str(o.id),
+                "type": "offer",
+                "listing_id": str(o.listing_id) if o.listing_id else "",
+                "listing_title": o.listing_title,
+                "listing_price": "",
+                "name": o.buyer_name,
+                "phone": o.buyer_phone,
+                "email": o.buyer_email or "",
+                "message": o.message or "Made a price offer",
+                "amount": float(o.amount) if o.amount is not None else None,
+                "status": o.status,
+                "city": "",
+                "created_at": _iso(o.created_at),
+            })
+
+        for t in test_drives:
+            leads.append({
+                "id": str(t.id),
+                "type": "test_drive",
+                "listing_id": str(t.listing_id) if t.listing_id else "",
+                "listing_title": t.listing_title,
+                "listing_price": "",
+                "name": t.buyer_name,
+                "phone": t.buyer_phone,
+                "email": t.buyer_email or "",
+                "message": t.message or f"Test drive request for {_iso(t.scheduled_at)}",
+                "amount": None,
+                "status": t.status,
+                "city": "",
+                "created_at": _iso(t.created_at),
+            })
+
+        leads.sort(key=lambda x: x["created_at"] or "", reverse=True)
+
+        # Per-listing breakdown: which product is getting interest.
+        per_listing: dict[str, dict] = {}
+        for lead in leads:
+            lid = lead["listing_id"]
+            if not lid:
+                continue
+            row = per_listing.setdefault(lid, {
+                "listing_id": lid,
+                "listing_title": lead["listing_title"],
+                "listing_price": lead["listing_price"],
+                "views": 0,
+                "inquiries": 0,
+                "offers": 0,
+                "test_drives": 0,
+                "total": 0,
+            })
+            if lead["type"] == "view":
+                row["views"] += 1
+            elif lead["type"] == "offer":
+                row["offers"] += 1
+            elif lead["type"] == "test_drive":
+                row["test_drives"] += 1
+            else:
+                row["inquiries"] += 1
+            row["total"] += 1
+
+        per_listing_list = sorted(
+            per_listing.values(), key=lambda r: r["total"], reverse=True
+        )
+
+        summary = {
+            "views": len(views),
+            "inquiries": len(inquiries),
+            "offers": len(offers),
+            "test_drives": len(test_drives),
+            "total": len(leads),
+            "new_inquiries": sum(1 for i in inquiries if i.status == Inquiry.Status.NEW),
+        }
+
+        return Response({
+            "summary": summary,
+            "per_listing": per_listing_list,
+            "leads": leads[:200],
+        })
 
 
 class LoanInquiryViewSet(

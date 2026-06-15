@@ -1,15 +1,29 @@
 from django.contrib import admin
-from .models import Inquiry, LoanInquiry, Offer, TestDriveBooking
+from .models import Inquiry, ListingView, LoanInquiry, Offer, TestDriveBooking
 
 
 @admin.register(Inquiry)
 class InquiryAdmin(admin.ModelAdmin):
     list_display = (
-        "listing_title", "buyer_name", "buyer_phone",
+        "listing_title", "seller_name", "buyer_name", "buyer_phone",
         "channel", "status", "created_at",
     )
     list_filter = ("status", "channel", "city")
-    search_fields = ("buyer_name", "buyer_phone", "listing_title", "message")
+    search_fields = (
+        "buyer_name", "buyer_phone", "listing_title", "message", "seller_name",
+    )
+
+
+@admin.register(ListingView)
+class ListingViewAdmin(admin.ModelAdmin):
+    list_display = (
+        "listing_title", "seller_name", "viewer_name", "viewer_phone",
+        "view_count", "updated_at",
+    )
+    list_filter = ("city",)
+    search_fields = (
+        "listing_title", "seller_name", "viewer_name", "viewer_phone",
+    )
 
 
 @admin.register(TestDriveBooking)
