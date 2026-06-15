@@ -28,7 +28,13 @@ class Subscription(models.Model):
         related_name="subscriptions",
     )
     plan = models.CharField(max_length=32, db_index=True)
+    # `amount_inr` is the total actually paid (taxable value + GST). The
+    # split below is kept for the tax invoice. Legacy rows created before
+    # GST may have base/gst = 0; the invoice builder falls back gracefully.
     amount_inr = models.PositiveIntegerField()
+    base_inr = models.PositiveIntegerField(default=0)
+    gst_inr = models.PositiveIntegerField(default=0)
+    customer_gstin = models.CharField(max_length=15, blank=True, default="")
     status = models.CharField(
         max_length=12,
         choices=Status.choices,
@@ -90,7 +96,12 @@ class RazorpayOrder(models.Model):
         blank=True,
     )
     plan = models.CharField(max_length=32, db_index=True)
+    # Total charged (base + GST). `base_inr`/`gst_inr` keep the tax split and
+    # `customer_gstin` is the buyer's optional GST number for B2B invoices.
     amount_inr = models.PositiveIntegerField()
+    base_inr = models.PositiveIntegerField(default=0)
+    gst_inr = models.PositiveIntegerField(default=0)
+    customer_gstin = models.CharField(max_length=15, blank=True, default="")
     razorpay_order_id = models.CharField(max_length=120, unique=True)
     razorpay_payment_id = models.CharField(max_length=120, blank=True, default="")
     receipt = models.CharField(max_length=80, unique=True)

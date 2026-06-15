@@ -240,6 +240,13 @@ RAZORPAY_KEY_ID = env("RAZORPAY_KEY_ID", default="")
 RAZORPAY_KEY_SECRET = env("RAZORPAY_KEY_SECRET", default="")
 RAZORPAY_WEBHOOK_SECRET = env("RAZORPAY_WEBHOOK_SECRET", default="")
 
+# GST / tax invoice. 18% is added on top of every paid plan/boost price and
+# the seller GSTIN is printed on each tax invoice. Override via env if the
+# business registration changes; defaults match the registered business.
+GST_RATE_PERCENT = env.int("GST_RATE_PERCENT", default=18)
+GST_SELLER_GSTIN = env("GST_SELLER_GSTIN", default="09BUUPK1450R1ZQ")
+GST_SELLER_NAME = env("GST_SELLER_NAME", default="Old Car Bazar")
+
 # Security tightening for production
 if not DEBUG:
     SESSION_COOKIE_SECURE = True

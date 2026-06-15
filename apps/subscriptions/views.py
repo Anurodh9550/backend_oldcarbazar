@@ -21,6 +21,13 @@ from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.billing.gst import (
+    GST_RATE_PERCENT,
+    SELLER_GSTIN,
+    compute_gst,
+    seller_invoice_block,
+)
+
 from .models import RazorpayOrder, Subscription
 from .plans import ALL_PLANS, get_plan
 from .serializers import (
@@ -127,8 +134,11 @@ class CreateRazorpayOrderView(APIView):
         except RuntimeError:
             return _gateway_not_configured_response()
 
+        customer_gstin = ser.validated_data.get("customer_gstin", "")
+        base_inr, gst_inr, total_inr = compute_gst(plan.price_inr)
+
         receipt = f"ocb_{request.user.id.hex[:12]}_{uuid.uuid4().hex[:12]}"
-        amount_paise = plan.price_inr * 100
+        amount_paise = total_inr * 100
         payload = {
             "amount": amount_paise,
             "currency": "INR",
@@ -137,6 +147,8 @@ class CreateRazorpayOrderView(APIView):
                 "user_id": str(request.user.id),
                 "plan": plan.code,
                 "product": "old-car-bazar-subscription",
+                "gst_inr": str(gst_inr),
+                "customer_gstin": customer_gstin,
             },
         }
 
@@ -154,7 +166,10 @@ class CreateRazorpayOrderView(APIView):
         RazorpayOrder.objects.create(
             user=request.user,
             plan=plan.code,
-            amount_inr=plan.price_inr,
+            amount_inr=total_inr,
+            base_inr=base_inr,
+            gst_inr=gst_inr,
+            customer_gstin=customer_gstin,
             razorpay_order_id=order["id"],
             receipt=receipt,
             raw_response=order,
@@ -164,7 +179,12 @@ class CreateRazorpayOrderView(APIView):
             "key_id": dj_settings.RAZORPAY_KEY_ID,
             "order_id": order["id"],
             "amount": amount_paise,
-            "amount_inr": plan.price_inr,
+            "amount_inr": total_inr,
+            "base_inr": base_inr,
+            "gst_inr": gst_inr,
+            "gst_rate": GST_RATE_PERCENT,
+            "seller_gstin": SELLER_GSTIN,
+            "customer_gstin": customer_gstin,
             "currency": "INR",
             "plan": plan.to_dict(),
             "name": request.user.name,
@@ -264,6 +284,7 @@ class VerifyRazorpayPaymentView(APIView):
             provider="razorpay",
             provider_payment_id=data["razorpay_payment_id"],
             notes=f"Razorpay order {order.razorpay_order_id}",
+            customer_gstin=order.customer_gstin,
         )
         order.subscription = sub
         order.status = RazorpayOrder.Status.PAID
@@ -384,6 +405,7 @@ class RazorpayWebhookView(APIView):
                         provider="razorpay",
                         provider_payment_id=payment_id,
                         notes=f"Activated by Razorpay webhook: {event_name}",
+                        customer_gstin=order.customer_gstin,
                     )
                     order.subscription = sub
                     order.status = RazorpayOrder.Status.PAID
@@ -425,6 +447,11 @@ def _build_invoice_payload(sub: Subscription, *, user) -> dict:
         f"OCB-{sub.started_at:%Y%m%d}-{str(sub.id).split('-')[0].upper()}"
     )
 
+    # Legacy rows (pre-GST) stored only amount_inr → treat it as the taxable
+    # value with no GST so the invoice still totals correctly.
+    base_inr = sub.base_inr or sub.amount_inr
+    gst_inr = sub.gst_inr or 0
+
     return {
         "subscription_id": str(sub.id),
         "invoice_number": invoice_number,
@@ -433,6 +460,9 @@ def _build_invoice_payload(sub: Subscription, *, user) -> dict:
         "plan_code": sub.plan,
         "plan_name": plan_name,
         "amount_inr": sub.amount_inr,
+        "base_inr": base_inr,
+        "gst_inr": gst_inr,
+        "gst_rate": GST_RATE_PERCENT,
         "currency": "INR",
         "status": sub.status,
         "started_at": sub.started_at,
@@ -445,13 +475,9 @@ def _build_invoice_payload(sub: Subscription, *, user) -> dict:
             "email": user.email or "",
             "phone": user.phone,
             "city": user.city or "",
+            "gstin": sub.customer_gstin or "",
         },
-        "seller": {
-            "name": "Old Car Bazar",
-            "address": "Old Car Bazar, India",
-            "email": "support@oldcarbazar.com",
-            "website": "https://oldcarbazar.com",
-        },
+        "seller": seller_invoice_block(),
     }
 
 
@@ -461,6 +487,8 @@ def _build_boost_invoice_payload(order, *, user) -> dict:
 
     pkg = get_boost_package(order.package)
     invoice_number = f"OCB-BOOST-{str(order.id).split('-')[0].upper()}"
+    base_inr = order.base_inr or order.amount_inr
+    gst_inr = order.gst_inr or 0
     return {
         "boost_order_id": str(order.id),
         "invoice_number": invoice_number,
@@ -470,6 +498,9 @@ def _build_boost_invoice_payload(order, *, user) -> dict:
         "package_name": pkg.name if pkg else order.package,
         "duration_days": order.duration_days,
         "amount_inr": order.amount_inr,
+        "base_inr": base_inr,
+        "gst_inr": gst_inr,
+        "gst_rate": GST_RATE_PERCENT,
         "currency": "INR",
         "status": order.status,
         "boosted_until": order.boosted_until,
@@ -483,13 +514,9 @@ def _build_boost_invoice_payload(order, *, user) -> dict:
             "email": user.email or "",
             "phone": user.phone,
             "city": user.city or "",
+            "gstin": order.customer_gstin or "",
         },
-        "seller": {
-            "name": "Old Car Bazar",
-            "address": "Old Car Bazar, India",
-            "email": "support@oldcarbazar.com",
-            "website": "https://oldcarbazar.com",
-        },
+        "seller": seller_invoice_block(),
     }
 
 

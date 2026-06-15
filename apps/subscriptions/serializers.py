@@ -1,8 +1,20 @@
 """Serializers for subscription endpoints."""
 from rest_framework import serializers
 
+from apps.billing.gst import is_valid_gstin, normalize_gstin
+
 from .plans import FREE_LISTING_LIMIT
 from .models import Subscription
+
+
+def validate_optional_gstin(value: str) -> str:
+    """Allow blank, else require a structurally valid 15-char GSTIN."""
+    value = normalize_gstin(value)
+    if value and not is_valid_gstin(value):
+        raise serializers.ValidationError(
+            "Enter a valid 15-character GST number (e.g. 09ABCDE1234F1Z5)."
+        )
+    return value
 
 
 class PlanSerializer(serializers.Serializer):
@@ -43,6 +55,13 @@ class ActivateSubscriptionSerializer(serializers.Serializer):
 
 class CreateRazorpayOrderSerializer(serializers.Serializer):
     plan = serializers.CharField()
+    customer_gstin = serializers.CharField(
+        required=False, allow_blank=True, default="",
+        validators=[validate_optional_gstin],
+    )
+
+    def validate_customer_gstin(self, value):
+        return validate_optional_gstin(value)
 
 
 class RazorpayOrderSerializer(serializers.Serializer):
@@ -50,6 +69,11 @@ class RazorpayOrderSerializer(serializers.Serializer):
     order_id = serializers.CharField()
     amount = serializers.IntegerField()
     amount_inr = serializers.IntegerField()
+    base_inr = serializers.IntegerField()
+    gst_inr = serializers.IntegerField()
+    gst_rate = serializers.IntegerField()
+    seller_gstin = serializers.CharField()
+    customer_gstin = serializers.CharField(allow_blank=True)
     currency = serializers.CharField()
     plan = PlanSerializer()
     name = serializers.CharField()
@@ -67,7 +91,8 @@ class SubscriptionSerializer(serializers.ModelSerializer):
     class Meta:
         model = Subscription
         fields = (
-            "id", "plan", "amount_inr", "status",
+            "id", "plan", "amount_inr", "base_inr", "gst_inr",
+            "customer_gstin", "status",
             "started_at", "expires_at",
             "provider", "provider_payment_id",
             "created_at", "updated_at",

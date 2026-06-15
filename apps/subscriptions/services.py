@@ -4,6 +4,8 @@ from typing import Optional
 
 from django.utils import timezone
 
+from apps.billing.gst import compute_gst, normalize_gstin
+
 from .models import Subscription
 from .plans import FREE_LISTING_LIMIT, FREE_PLAN, Plan, get_plan
 
@@ -79,8 +81,13 @@ def activate_subscription(
     provider: str = "manual",
     provider_payment_id: str = "",
     notes: str = "",
+    customer_gstin: str = "",
 ) -> Subscription:
     """Create a Subscription row and return it.
+
+    The amount charged includes 18% GST on the plan price. We store the
+    GST-inclusive total in `amount_inr` (what the customer actually paid)
+    and keep the taxable value + GST split for the invoice.
 
     If the user already has an active subscription on the same plan we
     *extend* the existing window from its current `expires_at` rather
@@ -89,26 +96,35 @@ def activate_subscription(
     """
     now = timezone.now()
     existing = get_active_subscription(user)
+    base, gst, total = compute_gst(plan.price_inr)
+    customer_gstin = normalize_gstin(customer_gstin)
 
     if existing and existing.plan == plan.code:
         existing.expires_at = existing.expires_at + timedelta(
             days=plan.duration_days
         )
-        existing.amount_inr += plan.price_inr
+        existing.amount_inr += total
+        existing.base_inr += base
+        existing.gst_inr += gst
+        if customer_gstin:
+            existing.customer_gstin = customer_gstin
         if provider_payment_id:
             existing.provider_payment_id = provider_payment_id
         if notes:
             existing.notes = (existing.notes + "\n" + notes).strip()
         existing.save(update_fields=[
-            "expires_at", "amount_inr", "provider_payment_id",
-            "notes", "updated_at",
+            "expires_at", "amount_inr", "base_inr", "gst_inr",
+            "customer_gstin", "provider_payment_id", "notes", "updated_at",
         ])
         return existing
 
     return Subscription.objects.create(
         user=user,
         plan=plan.code,
-        amount_inr=plan.price_inr,
+        amount_inr=total,
+        base_inr=base,
+        gst_inr=gst,
+        customer_gstin=customer_gstin,
         started_at=now,
         expires_at=now + timedelta(days=plan.duration_days),
         provider=provider,

@@ -5,6 +5,8 @@ from decimal import Decimal, InvalidOperation
 from django.utils import timezone
 from rest_framework import serializers
 
+from apps.subscriptions.serializers import validate_optional_gstin
+
 from .models import Listing, ListingPhoto
 
 
@@ -347,6 +349,12 @@ class BoostPackageSerializer(serializers.Serializer):
 
 class CreateBoostOrderSerializer(serializers.Serializer):
     package = serializers.CharField()
+    customer_gstin = serializers.CharField(
+        required=False, allow_blank=True, default="",
+    )
+
+    def validate_customer_gstin(self, value):
+        return validate_optional_gstin(value)
 
 
 class BoostOrderResponseSerializer(serializers.Serializer):
@@ -354,6 +362,11 @@ class BoostOrderResponseSerializer(serializers.Serializer):
     order_id = serializers.CharField()
     amount = serializers.IntegerField()
     amount_inr = serializers.IntegerField()
+    base_inr = serializers.IntegerField()
+    gst_inr = serializers.IntegerField()
+    gst_rate = serializers.IntegerField()
+    seller_gstin = serializers.CharField()
+    customer_gstin = serializers.CharField(allow_blank=True)
     currency = serializers.CharField()
     package = BoostPackageSerializer()
     listing_id = serializers.CharField()

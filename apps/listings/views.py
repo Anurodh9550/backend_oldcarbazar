@@ -18,6 +18,11 @@ logger = logging.getLogger(__name__)
 
 from apps.adminpanel.models import ActivityLog
 from apps.adminpanel.permissions import IsAdminOperator
+from apps.billing.gst import (
+    GST_RATE_PERCENT,
+    SELLER_GSTIN,
+    compute_gst,
+)
 from apps.subscriptions.services import can_publish
 from .boost import BOOST_PACKAGES, get_boost_package
 from .filters import ListingFilter
@@ -339,8 +344,11 @@ class ListingViewSet(
         except RuntimeError:
             return _gateway_not_configured_response()
 
+        customer_gstin = ser.validated_data.get("customer_gstin", "")
+        base_inr, gst_inr, total_inr = compute_gst(pkg.price_inr)
+
         receipt = f"ocbb_{request.user.id.hex[:10]}_{uuid.uuid4().hex[:10]}"
-        amount_paise = pkg.price_inr * 100
+        amount_paise = total_inr * 100
         payload = {
             "amount": amount_paise,
             "currency": "INR",
@@ -350,6 +358,8 @@ class ListingViewSet(
                 "listing_id": str(listing.id),
                 "package": pkg.code,
                 "product": "old-car-bazar-boost",
+                "gst_inr": str(gst_inr),
+                "customer_gstin": customer_gstin,
             },
         }
 
@@ -369,7 +379,10 @@ class ListingViewSet(
             listing=listing,
             package=pkg.code,
             duration_days=pkg.duration_days,
-            amount_inr=pkg.price_inr,
+            amount_inr=total_inr,
+            base_inr=base_inr,
+            gst_inr=gst_inr,
+            customer_gstin=customer_gstin,
             razorpay_order_id=order["id"],
             receipt=receipt,
             raw_response=order,
@@ -379,7 +392,12 @@ class ListingViewSet(
             "key_id": dj_settings.RAZORPAY_KEY_ID,
             "order_id": order["id"],
             "amount": amount_paise,
-            "amount_inr": pkg.price_inr,
+            "amount_inr": total_inr,
+            "base_inr": base_inr,
+            "gst_inr": gst_inr,
+            "gst_rate": GST_RATE_PERCENT,
+            "seller_gstin": SELLER_GSTIN,
+            "customer_gstin": customer_gstin,
             "currency": "INR",
             "package": pkg.to_dict(),
             "listing_id": str(listing.id),
