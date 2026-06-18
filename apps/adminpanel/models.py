@@ -52,6 +52,8 @@ class ActivityLog(models.Model):
         ("user-verified", "User verified"),
         ("admin-login", "Admin login"),
         ("settings-updated", "Settings updated"),
+        ("dealer-offer-granted", "Dealer offer granted"),
+        ("dealer-offer-updated", "Dealer offer updated"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -98,6 +100,8 @@ class AppSettings(models.Model):
     support_phone = models.CharField(max_length=32, default="+91 98765 43210")
     brand_color = models.CharField(max_length=16, default="#f75d34")
     loan_tools_content = models.JSONField(blank=True, null=True)
+    # Dealer launch-offer campaign (title, duration default, max grants, etc.)
+    dealer_offer = models.JSONField(blank=True, null=True)
     # Promotional ad banners shown across the website AND the mobile app.
     # Each entry is a plain dict (see web `lib/ads.ts` / app `lib/api.ts` Ad type).
     ads = models.JSONField(default=list, blank=True)

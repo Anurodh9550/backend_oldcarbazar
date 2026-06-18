@@ -70,15 +70,56 @@ PRO_YEARLY_PLAN = Plan(
     ],
 )
 
+DEALER_TRIAL_15_PLAN = Plan(
+    code="dealer_trial_15",
+    name="Dealer 15-Day Trial",
+    price_inr=0,
+    duration_days=15,
+    listing_limit=None,
+    perks=[
+        "Unlimited listings for 15 days",
+        "Verified dealer badge",
+        "Direct buyer WhatsApp contact",
+        "City-wise search visibility",
+        "Dealer launch offer — admin activated",
+    ],
+)
+
+DEALER_TRIAL_20_PLAN = Plan(
+    code="dealer_trial_20",
+    name="Dealer 20-Day Trial",
+    price_inr=0,
+    duration_days=20,
+    listing_limit=None,
+    perks=[
+        "Unlimited listings for 20 days",
+        "Verified dealer badge",
+        "Direct buyer WhatsApp contact",
+        "City-wise search visibility",
+        "Dealer launch offer — admin activated",
+    ],
+)
+
 PAID_PLANS: dict[str, Plan] = {
     PRO_PLAN.code: PRO_PLAN,
     PRO_YEARLY_PLAN.code: PRO_YEARLY_PLAN,
 }
 
+# Free dealer trials are activated by admin (sales team), not via Razorpay.
+DEALER_TRIAL_PLANS: dict[str, Plan] = {
+    DEALER_TRIAL_15_PLAN.code: DEALER_TRIAL_15_PLAN,
+    DEALER_TRIAL_20_PLAN.code: DEALER_TRIAL_20_PLAN,
+}
+
 ALL_PLANS: dict[str, Plan] = {
     FREE_PLAN.code: FREE_PLAN,
     **PAID_PLANS,
+    **DEALER_TRIAL_PLANS,
 }
+
+
+def is_dealer_trial_plan(code: str) -> bool:
+    return code in DEALER_TRIAL_PLANS
 
 
 def get_plan(code: str) -> Optional[Plan]:

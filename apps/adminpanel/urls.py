@@ -9,6 +9,7 @@ from .views import (
     AdminPaymentsView,
     AppSettingsView,
     DashboardStatsView,
+    DealerOffersView,
 )
 
 router = DefaultRouter()
@@ -20,6 +21,7 @@ urlpatterns = [
     path("me/", AdminMeView.as_view(), name="admin-me"),
     path("dashboard/", DashboardStatsView.as_view(), name="admin-dashboard"),
     path("payments/", AdminPaymentsView.as_view(), name="admin-payments"),
+    path("dealer-offers/", DealerOffersView.as_view(), name="admin-dealer-offers"),
     path("settings/", AppSettingsView.as_view(), name="admin-settings"),
     *router.urls,
 ]

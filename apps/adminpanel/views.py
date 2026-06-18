@@ -9,11 +9,13 @@ from django.utils import timezone
 from rest_framework import generics, mixins, permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from apps.inquiries.models import Inquiry
 from apps.listings.models import Listing
 from apps.users.views import UserAdminViewSet  # noqa: F401  (re-exported in urls)
 
+from .dealer_offers import DEFAULT_DEALER_OFFER_CAMPAIGN, merge_dealer_offer_campaign
 from .models import ActivityLog, Admin, AppSettings
 from .permissions import IsAdminOperator
 from .serializers import (
@@ -427,6 +429,87 @@ class AdminPaymentsView(generics.GenericAPIView):
                 "total_revenue": sub_revenue + boost_revenue,
             },
         })
+
+
+class DealerOffersView(APIView):
+    """GET / PUT  /api/v1/admin-panel/dealer-offers/
+
+    Manage the dealer launch-offer campaign and list active grants.
+    """
+
+    permission_classes = (IsAdminOperator,)
+
+    def get(self, request):
+        from apps.subscriptions.models import Subscription
+        from apps.subscriptions.plans import DEALER_TRIAL_PLANS, get_plan
+        from apps.subscriptions.services import count_active_listings
+
+        settings = AppSettings.singleton()
+        campaign = merge_dealer_offer_campaign(settings.dealer_offer)
+
+        plans = [p.to_dict() for p in DEALER_TRIAL_PLANS.values()]
+
+        now = timezone.now()
+        active_qs = (
+            Subscription.objects.filter(
+                plan__in=DEALER_TRIAL_PLANS.keys(),
+                status=Subscription.Status.ACTIVE,
+                expires_at__gt=now,
+            )
+            .select_related("user")
+            .order_by("-expires_at")
+        )
+        active_grants = []
+        for sub in active_qs:
+            plan = get_plan(sub.plan)
+            user = sub.user
+            active_grants.append({
+                "subscription_id": str(sub.id),
+                "user_id": str(user.id) if user else "",
+                "user_name": user.name if user else "—",
+                "user_phone": user.phone if user else "",
+                "user_email": (user.email or "") if user else "",
+                "user_city": user.city if user else "",
+                "plan": sub.plan,
+                "plan_name": plan.name if plan else sub.plan,
+                "listings_count": count_active_listings(user) if user else 0,
+                "started_at": sub.started_at,
+                "expires_at": sub.expires_at,
+                "provider": sub.provider,
+            })
+
+        grants_used = len(active_grants)
+        max_grants = int(campaign.get("max_grants") or 0)
+
+        return Response({
+            "campaign": campaign,
+            "plans": plans,
+            "active_grants": active_grants,
+            "stats": {
+                "grants_used": grants_used,
+                "max_grants": max_grants,
+                "slots_remaining": max(max_grants - grants_used, 0) if max_grants else None,
+            },
+        })
+
+    def put(self, request):
+        settings = AppSettings.singleton()
+        incoming = request.data if isinstance(request.data, dict) else {}
+        merged = merge_dealer_offer_campaign({
+            **(settings.dealer_offer or {}),
+            **incoming,
+        })
+        settings.dealer_offer = merged
+        settings.save(update_fields=["dealer_offer", "updated_at"])
+
+        ActivityLog.objects.create(
+            actor_admin=getattr(request, "admin", None),
+            type="dealer-offer-updated",
+            message="Dealer offer campaign updated",
+            metadata={"enabled": merged.get("enabled"), "default_plan_code": merged.get("default_plan_code")},
+        )
+
+        return Response({"campaign": merged})
 
 
 class AppSettingsView(generics.RetrieveUpdateAPIView):

@@ -1,6 +1,7 @@
 """Authentication + user management views."""
 from django.contrib.auth import get_user_model
 from django.db.models import Q
+from django.utils import timezone
 from rest_framework import generics, permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -12,6 +13,7 @@ from .models import OtpCode  # noqa: F401  (re-exported for tests / shell)
 from .serializers import (
     AdminNoteSerializer,
     BlockUserSerializer,
+    GrantSubscriptionSerializer,
     OcbTokenObtainPairSerializer,
     OtpSendSerializer,
     OtpVerifySerializer,
@@ -141,6 +143,90 @@ class UserAdminViewSet(viewsets.ReadOnlyModelViewSet):
         user.admin_note = ser.validated_data["note"]
         user.save(update_fields=["admin_note", "updated_at"])
         return Response(UserSerializer(user).data)
+
+    @action(detail=True, methods=["post"], url_path="grant-subscription")
+    def grant_subscription(self, request, pk=None):
+        """Activate a dealer trial / paid plan for a user (sales team flow)."""
+        from apps.adminpanel.models import ActivityLog
+        from apps.subscriptions.models import Subscription
+        from apps.subscriptions.plans import DEALER_TRIAL_PLANS, get_plan, is_dealer_trial_plan
+        from apps.subscriptions.services import activate_subscription, get_active_subscription
+
+        user = self.get_object()
+        ser = GrantSubscriptionSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        plan_code = ser.validated_data["plan"]
+        plan = get_plan(plan_code)
+        if not plan or plan.code == "free":
+            return Response(
+                {"detail": "Unknown or invalid plan."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if is_dealer_trial_plan(plan.code):
+            from apps.adminpanel.dealer_offers import merge_dealer_offer_campaign
+            from apps.adminpanel.models import AppSettings
+
+            campaign = merge_dealer_offer_campaign(AppSettings.singleton().dealer_offer)
+            if not campaign.get("enabled"):
+                return Response(
+                    {"detail": "Dealer offer campaign is currently disabled."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            max_grants = int(campaign.get("max_grants") or 0)
+            if max_grants > 0:
+                active_count = Subscription.objects.filter(
+                    plan__in=DEALER_TRIAL_PLANS.keys(),
+                    status=Subscription.Status.ACTIVE,
+                    expires_at__gt=timezone.now(),
+                ).count()
+                existing = get_active_subscription(user)
+                if not existing and active_count >= max_grants:
+                    return Response(
+                        {"detail": f"Dealer offer limit reached ({max_grants} slots)."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+        admin = getattr(request, "admin", None)
+        actor_name = admin.name if admin else "admin"
+        sub = activate_subscription(
+            user,
+            plan,
+            provider="admin",
+            provider_payment_id="",
+            notes=ser.validated_data.get("notes")
+            or f"Granted by {actor_name} via admin panel",
+        )
+
+        # Promote to seller role so dealer can list cars.
+        if user.role == User.Role.BUYER:
+            user.role = User.Role.SELLER
+            user.save(update_fields=["role", "updated_at"])
+
+        ActivityLog.objects.create(
+            actor_admin=admin,
+            type="dealer-offer-granted" if is_dealer_trial_plan(plan.code) else "settings-updated",
+            message=f"Granted {plan.name} to {user.name}",
+            target=str(user.id),
+            metadata={
+                "plan": plan.code,
+                "expires_at": sub.expires_at.isoformat(),
+                "user_phone": user.phone,
+            },
+        )
+
+        active = get_active_subscription(user)
+        return Response({
+            "subscription_id": str(sub.id),
+            "plan": plan.code,
+            "plan_name": plan.name,
+            "expires_at": sub.expires_at,
+            "user": UserSerializer(user).data,
+            "active_subscription": {
+                "plan": active.plan if active else plan.code,
+                "expires_at": active.expires_at if active else sub.expires_at,
+            },
+        }, status=status.HTTP_201_CREATED)
 
     @action(detail=False, methods=["get"])
     def counts(self, request):
