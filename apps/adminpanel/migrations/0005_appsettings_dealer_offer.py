@@ -1,12 +1,10 @@
-# Generated manually for dealer_offer JSON field on AppSettings.
-
 from django.db import migrations, models
 
 
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("adminpanel", "0003_appsettings_ads"),
+        ("adminpanel", "0004_appsettings_ads"),
     ]
 
     operations = [
