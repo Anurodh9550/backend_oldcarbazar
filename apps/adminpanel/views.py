@@ -512,6 +512,69 @@ class DealerOffersView(APIView):
         return Response({"campaign": merged})
 
 
+class DealerOfferRevokeView(APIView):
+    """POST /api/v1/admin-panel/dealer-offers/<sub_id>/revoke/
+
+    Immediately cancel an active dealer trial offer.
+    """
+
+    permission_classes = (IsAdminOperator,)
+
+    def post(self, request, sub_id):
+        from apps.subscriptions.models import Subscription
+        from apps.subscriptions.plans import DEALER_TRIAL_PLANS, get_plan
+
+        sub = (
+            Subscription.objects.filter(
+                id=sub_id,
+                plan__in=DEALER_TRIAL_PLANS.keys(),
+            )
+            .select_related("user")
+            .first()
+        )
+        if not sub:
+            return Response(
+                {"detail": "Dealer offer not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if sub.status != Subscription.Status.ACTIVE:
+            return Response(
+                {"detail": "This offer is already inactive."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        now = timezone.now()
+        admin = getattr(request, "admin", None)
+        actor_name = admin.name if admin else "admin"
+        sub.status = Subscription.Status.CANCELLED
+        sub.expires_at = now
+        sub.notes = (
+            f"{sub.notes}\nRevoked by {actor_name} via admin panel at {now:%Y-%m-%d %H:%M}"
+        ).strip()
+        sub.save(update_fields=["status", "expires_at", "notes", "updated_at"])
+
+        plan = get_plan(sub.plan)
+        user = sub.user
+        ActivityLog.objects.create(
+            actor_admin=admin,
+            type="dealer-offer-revoked",
+            message=f"Revoked {plan.name if plan else sub.plan} for {user.name if user else 'dealer'}",
+            target=str(user.id) if user else str(sub.id),
+            metadata={
+                "subscription_id": str(sub.id),
+                "plan": sub.plan,
+                "user_phone": user.phone if user else "",
+            },
+        )
+
+        return Response({
+            "ok": True,
+            "subscription_id": str(sub.id),
+            "user_id": str(user.id) if user else "",
+            "status": sub.status,
+        })
+
+
 class AppSettingsView(generics.RetrieveUpdateAPIView):
     """GET / PATCH  /api/v1/admin-panel/settings"""
     serializer_class = AppSettingsSerializer

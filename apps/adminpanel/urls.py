@@ -9,6 +9,7 @@ from .views import (
     AdminPaymentsView,
     AppSettingsView,
     DashboardStatsView,
+    DealerOfferRevokeView,
     DealerOffersView,
 )
 
@@ -22,6 +23,11 @@ urlpatterns = [
     path("dashboard/", DashboardStatsView.as_view(), name="admin-dashboard"),
     path("payments/", AdminPaymentsView.as_view(), name="admin-payments"),
     path("dealer-offers/", DealerOffersView.as_view(), name="admin-dealer-offers"),
+    path(
+        "dealer-offers/<uuid:sub_id>/revoke/",
+        DealerOfferRevokeView.as_view(),
+        name="admin-dealer-offer-revoke",
+    ),
     path("settings/", AppSettingsView.as_view(), name="admin-settings"),
     *router.urls,
 ]

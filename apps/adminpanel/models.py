@@ -54,6 +54,7 @@ class ActivityLog(models.Model):
         ("settings-updated", "Settings updated"),
         ("dealer-offer-granted", "Dealer offer granted"),
         ("dealer-offer-updated", "Dealer offer updated"),
+        ("dealer-offer-revoked", "Dealer offer revoked"),
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
