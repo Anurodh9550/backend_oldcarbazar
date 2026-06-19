@@ -247,6 +247,11 @@ GST_RATE_PERCENT = env.int("GST_RATE_PERCENT", default=18)
 GST_SELLER_GSTIN = env("GST_SELLER_GSTIN", default="09BUUPK1450R1ZQ")
 GST_SELLER_NAME = env("GST_SELLER_NAME", default="Old Car Bazar")
 
+# --------------------------- AI assistant (Gemini) ----------------- #
+# Google AI Studio keys may start with AIza… or AQ.… — both are valid.
+GEMINI_API_KEY = env("GEMINI_API_KEY", default="")
+GEMINI_MODEL = env("GEMINI_MODEL", default="gemini-2.5-flash")
+
 # Security tightening for production
 if not DEBUG:
     SESSION_COOKIE_SECURE = True
