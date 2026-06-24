@@ -250,9 +250,12 @@ class AdminPaymentsView(generics.GenericAPIView):
     permission_classes = (IsAdminOperator,)
 
     def get(self, request):
+        from apps.billing.gst import GST_RATE_PERCENT, SELLER_GSTIN, seller_invoice_block
         from apps.subscriptions.models import Subscription
         from apps.subscriptions.plans import get_plan
         from apps.listings.models import ListingBoostOrder
+
+        seller = seller_invoice_block()
 
         sub_rows = []
         subscriptions = (
@@ -263,6 +266,8 @@ class AdminPaymentsView(generics.GenericAPIView):
         for sub in subscriptions:
             plan = get_plan(sub.plan)
             rzp = getattr(sub, "razorpay_order", None)
+            base_inr = sub.base_inr or sub.amount_inr
+            gst_inr = sub.gst_inr or 0
             sub_rows.append({
                 "id": str(sub.id),
                 "user_name": sub.user.name if sub.user_id else "—",
@@ -271,6 +276,11 @@ class AdminPaymentsView(generics.GenericAPIView):
                 "plan": sub.plan,
                 "plan_name": plan.name if plan else sub.plan,
                 "amount_inr": sub.amount_inr,
+                "base_inr": base_inr,
+                "gst_inr": gst_inr,
+                "gst_rate": GST_RATE_PERCENT,
+                "seller_gstin": seller["gstin"] or SELLER_GSTIN,
+                "customer_gstin": sub.customer_gstin or "",
                 "status": sub.status,
                 "provider": sub.provider,
                 "razorpay_order_id": rzp.razorpay_order_id if rzp else "",
@@ -294,6 +304,8 @@ class AdminPaymentsView(generics.GenericAPIView):
             .order_by("-created_at")
         )
         for order in boosts:
+            base_inr = order.base_inr or order.amount_inr
+            gst_inr = order.gst_inr or 0
             boost_rows.append({
                 "id": str(order.id),
                 "user_name": order.user.name if order.user_id else "—",
@@ -304,6 +316,11 @@ class AdminPaymentsView(generics.GenericAPIView):
                 "package": order.package,
                 "duration_days": order.duration_days,
                 "amount_inr": order.amount_inr,
+                "base_inr": base_inr,
+                "gst_inr": gst_inr,
+                "gst_rate": GST_RATE_PERCENT,
+                "seller_gstin": seller["gstin"] or SELLER_GSTIN,
+                "customer_gstin": order.customer_gstin or "",
                 "status": order.status,
                 "razorpay_order_id": order.razorpay_order_id,
                 "razorpay_payment_id": order.razorpay_payment_id,
