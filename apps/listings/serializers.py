@@ -63,6 +63,10 @@ class ListingSerializer(serializers.ModelSerializer):
     photos = ListingPhotoSerializer(many=True, read_only=True)
     seller_id = serializers.UUIDField(source="seller.id", read_only=True)
     is_boosted = serializers.BooleanField(read_only=True)
+    has_video_proof = serializers.SerializerMethodField()
+    truth_declared = serializers.SerializerMethodField()
+    seller_response_tier = serializers.SerializerMethodField()
+    seller_avg_response_hours = serializers.SerializerMethodField()
 
     class Meta:
         model = Listing
@@ -75,7 +79,9 @@ class ListingSerializer(serializers.ModelSerializer):
             "registration_month", "reg_number", "insurance",
             "location", "area",
             "description", "features",
-            "cover_image", "photos",
+            "cover_image", "photos", "video_url",
+            "has_video_proof", "truth_declaration", "truth_declared", "truth_declared_at",
+            "seller_response_tier", "seller_avg_response_hours",
             "status", "moderation", "rejected_reason",
             "featured", "boosted_until", "is_boosted", "flagged", "flag_reason",
             "whatsapp", "is_seed",
@@ -83,6 +89,23 @@ class ListingSerializer(serializers.ModelSerializer):
             "created_at", "updated_at",
         )
         read_only_fields = fields
+
+    def get_has_video_proof(self, obj) -> bool:
+        return bool((obj.video_url or "").strip())
+
+    def get_truth_declared(self, obj) -> bool:
+        decl = obj.truth_declaration or {}
+        return bool(decl.get("confirmed"))
+
+    def get_seller_response_tier(self, obj) -> str:
+        if obj.seller_id and obj.seller:
+            return obj.seller.seller_response_tier or "new"
+        return "new"
+
+    def get_seller_avg_response_hours(self, obj):
+        if obj.seller_id and obj.seller:
+            return obj.seller.seller_avg_response_hours
+        return None
 
 
 # ---------- Write serializers ---------- #
@@ -138,9 +161,27 @@ class CreateListingSerializer(serializers.Serializer):
     photos = serializers.ListField(
         child=serializers.URLField(), required=False, default=list
     )
+    video_url = serializers.URLField(required=False, allow_blank=True, default="")
+    truth_declaration = serializers.DictField(required=False, default=dict)
+
+    def validate_truth_declaration(self, value):
+        if not value:
+            return {}
+        if value.get("confirmed") and not all(
+            value.get(key) for key in (
+                "no_accident", "no_flood", "not_commercial",
+                "no_major_repair", "rc_available", "direct_owner",
+            )
+        ):
+            raise serializers.ValidationError(
+                "Please confirm all Gaadi Ki Sachchai statements."
+            )
+        return value
 
     def create(self, validated):
         from apps.adminpanel.models import AppSettings
+        from django.utils import timezone as tz
+
         settings_row = AppSettings.singleton()
         auto_approve = settings_row.auto_approve_listings
         request = self.context["request"]
@@ -190,6 +231,11 @@ class CreateListingSerializer(serializers.Serializer):
             moderation=Listing.Moderation.APPROVED
                 if auto_approve else Listing.Moderation.PENDING,
             whatsapp=validated.get("whatsapp", True),
+            video_url=validated.get("video_url", ""),
+            truth_declaration=validated.get("truth_declaration", {}),
+            truth_declared_at=tz.now()
+            if (validated.get("truth_declaration") or {}).get("confirmed")
+            else None,
         )
 
         ListingPhoto.objects.bulk_create([
@@ -243,6 +289,8 @@ class UpdateListingSerializer(serializers.Serializer):
     email = serializers.EmailField(required=False, allow_blank=True)
     whatsapp = serializers.BooleanField(required=False)
     photos = serializers.ListField(child=serializers.URLField(), required=False)
+    video_url = serializers.URLField(required=False, allow_blank=True)
+    truth_declaration = serializers.DictField(required=False)
 
     OWNERSHIP_MAP = {
         "1st Owner": "First owner",
@@ -271,9 +319,26 @@ class UpdateListingSerializer(serializers.Serializer):
         "features": "features",
         "seller_name": "seller_name",
         "whatsapp": "whatsapp",
+        "video_url": "video_url",
+        "truth_declaration": "truth_declaration",
     }
 
+    def validate_truth_declaration(self, value):
+        if not value:
+            return value
+        if value.get("confirmed") and not all(
+            value.get(key) for key in (
+                "no_accident", "no_flood", "not_commercial",
+                "no_major_repair", "rc_available", "direct_owner",
+            )
+        ):
+            raise serializers.ValidationError(
+                "Please confirm all Gaadi Ki Sachchai statements."
+            )
+        return value
+
     def update(self, instance, validated):
+        from django.utils import timezone as tz
         for src, dest in self.DIRECT_FIELDS.items():
             if src in validated:
                 setattr(instance, dest, validated[src])
@@ -296,6 +361,13 @@ class UpdateListingSerializer(serializers.Serializer):
 
         if "email" in validated:
             instance.seller_email = validated["email"] or None
+
+        if "truth_declaration" in validated:
+            decl = validated["truth_declaration"]
+            if decl.get("confirmed"):
+                instance.truth_declared_at = tz.now()
+            elif decl == {}:
+                instance.truth_declared_at = None
 
         if any(k in validated for k in ("year", "brand", "model", "variant")):
             title = f"{instance.year} {instance.brand} {instance.model}"

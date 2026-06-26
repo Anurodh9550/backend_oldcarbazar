@@ -76,11 +76,34 @@ class InquiryViewSet(
 
     @action(detail=True, methods=["post"])
     def status(self, request, pk=None):
+        from apps.users.seller_score import mark_inquiry_responded
+
         inquiry = self.get_object()
         ser = InquiryStatusSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         inquiry.status = ser.validated_data["status"]
-        inquiry.save(update_fields=["status", "updated_at"])
+        if inquiry.status == Inquiry.Status.RESPONDED:
+            mark_inquiry_responded(inquiry)
+        else:
+            inquiry.save(update_fields=["status", "updated_at"])
+        return Response(InquirySerializer(inquiry).data)
+
+    @action(
+        detail=True,
+        methods=["post"],
+        permission_classes=[permissions.IsAuthenticated],
+        url_path="mark-responded",
+    )
+    def mark_responded(self, request, pk=None):
+        from apps.users.seller_score import mark_inquiry_responded
+
+        inquiry = Inquiry.objects.filter(id=pk, seller=request.user).first()
+        if not inquiry:
+            return Response(
+                {"detail": "Inquiry not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        mark_inquiry_responded(inquiry)
         return Response(InquirySerializer(inquiry).data)
 
 

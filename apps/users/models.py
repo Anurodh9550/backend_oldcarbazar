@@ -49,6 +49,20 @@ class User(AbstractBaseUser, PermissionsMixin):
     login_count = models.PositiveIntegerField(default=0)
     last_login_at = models.DateTimeField(null=True, blank=True)
 
+    class SellerResponseTier(models.TextChoices):
+        NEW = "new", "New seller"
+        FAST = "fast", "Fast responder"
+        GOOD = "good", "Good responder"
+        SLOW = "slow", "Slow responder"
+
+    seller_avg_response_hours = models.FloatField(null=True, blank=True)
+    seller_response_tier = models.CharField(
+        max_length=10,
+        choices=SellerResponseTier.choices,
+        default=SellerResponseTier.NEW,
+        db_index=True,
+    )
+
     is_staff = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     is_superuser = models.BooleanField(default=False)

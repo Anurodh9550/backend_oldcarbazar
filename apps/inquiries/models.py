@@ -49,6 +49,7 @@ class Inquiry(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
+    responded_at = models.DateTimeField(null=True, blank=True, db_index=True)
 
     class Meta:
         ordering = ("-created_at",)

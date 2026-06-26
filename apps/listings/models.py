@@ -88,6 +88,11 @@ class Listing(models.Model):
     views = models.PositiveIntegerField(default=0)
     inquiries_count = models.PositiveIntegerField(default=0)
 
+    # Optional owner video proof (Cloudinary URL) + Gaadi Ki Sachchai declaration.
+    video_url = models.URLField(blank=True, default="")
+    truth_declaration = models.JSONField(default=dict, blank=True)
+    truth_declared_at = models.DateTimeField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
 
