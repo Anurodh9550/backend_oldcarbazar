@@ -3,7 +3,6 @@ import uuid
 
 from django.conf import settings
 from django.db import models
-from django.utils import timezone
 
 
 class DealerShowroom(models.Model):
@@ -41,7 +40,7 @@ class ShowroomTeamMember(models.Model):
     )
     name = models.CharField(max_length=120)
     role = models.CharField(max_length=120, blank=True, default="")
-    photo_url = models.URLField(blank=True, default="")
+    photo_url = models.URLField(max_length=500, blank=True, default="")
     bio = models.TextField(blank=True, default="")
     sort_order = models.PositiveSmallIntegerField(default=0)
 
@@ -70,6 +69,28 @@ class ShowroomReview(models.Model):
 
     def __str__(self) -> str:
         return f"{self.author} ({self.rating}★)"
+
+
+class ShowroomGalleryItem(models.Model):
+    """Unlisted car / product card — photo + details without a formal listing."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    showroom = models.ForeignKey(
+        DealerShowroom,
+        on_delete=models.CASCADE,
+        related_name="gallery",
+    )
+    title = models.CharField(max_length=160)
+    photo_url = models.URLField(max_length=500, blank=True, default="")
+    price_label = models.CharField(max_length=60, blank=True, default="")
+    note = models.TextField(blank=True, default="")
+    sort_order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ("sort_order", "title")
+
+    def __str__(self) -> str:
+        return self.title
 
 
 class ListingAvailability(models.Model):

@@ -6,6 +6,7 @@ from apps.listings.models import Listing
 from .dealer_tools import (
     DealerShowroom,
     ListingAvailability,
+    ShowroomGalleryItem,
     ShowroomReview,
     ShowroomTeamMember,
 )
@@ -25,11 +26,18 @@ class ShowroomReviewSerializer(serializers.ModelSerializer):
         read_only_fields = ("id", "created_at")
 
 
+class ShowroomGalleryItemSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ShowroomGalleryItem
+        fields = ("id", "title", "photo_url", "price_label", "note", "sort_order")
+
+
 class DealerShowroomSerializer(serializers.ModelSerializer):
     dealer_id = serializers.UUIDField(source="dealer.id", read_only=True)
     dealer_name = serializers.CharField(source="dealer.name", read_only=True)
     team = ShowroomTeamMemberSerializer(many=True, required=False)
     reviews = ShowroomReviewSerializer(many=True, required=False)
+    gallery = ShowroomGalleryItemSerializer(many=True, required=False)
 
     class Meta:
         model = DealerShowroom
@@ -45,11 +53,12 @@ class DealerShowroomSerializer(serializers.ModelSerializer):
             "whatsapp",
             "team",
             "reviews",
+            "gallery",
             "updated_at",
         )
         read_only_fields = ("dealer_id", "dealer_name", "updated_at")
 
-    def _sync_nested(self, showroom, team_data, reviews_data):
+    def _sync_nested(self, showroom, team_data, reviews_data, gallery_data):
         if team_data is not None:
             showroom.team.all().delete()
             ShowroomTeamMember.objects.bulk_create(
@@ -72,21 +81,34 @@ class DealerShowroomSerializer(serializers.ModelSerializer):
                     for item in reviews_data
                 ]
             )
+        if gallery_data is not None:
+            showroom.gallery.all().delete()
+            ShowroomGalleryItem.objects.bulk_create(
+                [
+                    ShowroomGalleryItem(
+                        showroom=showroom,
+                        **{k: v for k, v in item.items() if k != "id"},
+                    )
+                    for item in gallery_data
+                ]
+            )
 
     def create(self, validated_data):
         team_data = validated_data.pop("team", None)
         reviews_data = validated_data.pop("reviews", None)
+        gallery_data = validated_data.pop("gallery", None)
         showroom = DealerShowroom.objects.create(**validated_data)
-        self._sync_nested(showroom, team_data, reviews_data)
+        self._sync_nested(showroom, team_data, reviews_data, gallery_data)
         return showroom
 
     def update(self, instance, validated_data):
         team_data = validated_data.pop("team", None)
         reviews_data = validated_data.pop("reviews", None)
+        gallery_data = validated_data.pop("gallery", None)
         for attr, value in validated_data.items():
             setattr(instance, attr, value)
         instance.save()
-        self._sync_nested(instance, team_data, reviews_data)
+        self._sync_nested(instance, team_data, reviews_data, gallery_data)
         return instance
 
 

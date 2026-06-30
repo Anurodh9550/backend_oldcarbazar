@@ -130,6 +130,7 @@ class OtpCode(models.Model):
 from .dealer_tools import (  # noqa: E402, F401
     DealerShowroom,
     ListingAvailability,
+    ShowroomGalleryItem,
     ShowroomReview,
     ShowroomTeamMember,
 )

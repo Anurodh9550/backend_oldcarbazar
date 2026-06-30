@@ -31,7 +31,7 @@ class DealerShowroomPublicView(APIView):
     def get(self, request, dealer_id):
         showroom = get_object_or_404(
             DealerShowroom.objects.select_related("dealer").prefetch_related(
-                "team", "reviews"
+                "team", "reviews", "gallery"
             ),
             dealer_id=dealer_id,
             enabled=True,
@@ -61,7 +61,7 @@ class MyDealerShowroomView(APIView):
         )
         showroom = (
             DealerShowroom.objects.filter(pk=showroom.pk)
-            .prefetch_related("team", "reviews")
+            .prefetch_related("team", "reviews", "gallery")
             .first()
         )
         return Response(DealerShowroomSerializer(showroom).data)
