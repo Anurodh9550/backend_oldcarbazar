@@ -2,6 +2,13 @@ from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
 
 from .dealers import DealerDetailView, DealersListView
+from .dealer_showroom_views import (
+    DealerListingAvailabilityPublicView,
+    DealerShowroomPublicView,
+    ListingAvailabilityDetailView,
+    MyDealerShowroomView,
+    MyListingAvailabilityView,
+)
 from .views import (
     LoginView,
     MeView,
@@ -24,5 +31,26 @@ urlpatterns = [
 # concern (auth vs. directory).
 dealer_urls = [
     path("", DealersListView.as_view(), name="dealer-list"),
+    path("me/showroom/", MyDealerShowroomView.as_view(), name="dealer-my-showroom"),
+    path(
+        "me/availability/",
+        MyListingAvailabilityView.as_view(),
+        name="dealer-my-availability",
+    ),
+    path(
+        "me/availability/<uuid:listing_id>/",
+        ListingAvailabilityDetailView.as_view(),
+        name="dealer-listing-availability",
+    ),
+    path(
+        "<uuid:dealer_id>/showroom/",
+        DealerShowroomPublicView.as_view(),
+        name="dealer-showroom",
+    ),
+    path(
+        "<uuid:dealer_id>/availability/",
+        DealerListingAvailabilityPublicView.as_view(),
+        name="dealer-availability-public",
+    ),
     path("<uuid:dealer_id>/", DealerDetailView.as_view(), name="dealer-detail"),
 ]

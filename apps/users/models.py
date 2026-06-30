@@ -124,3 +124,12 @@ class OtpCode(models.Model):
     @property
     def is_expired(self) -> bool:
         return self.expires_at < timezone.now()
+
+
+# Dealer showroom + availability (separate module, registered here for migrations)
+from .dealer_tools import (  # noqa: E402, F401
+    DealerShowroom,
+    ListingAvailability,
+    ShowroomReview,
+    ShowroomTeamMember,
+)
