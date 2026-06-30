@@ -16,8 +16,8 @@ class DealerShowroom(models.Model):
         related_name="showroom",
     )
     enabled = models.BooleanField(default=True)
-    banner_url = models.URLField(blank=True, default="")
-    logo_url = models.URLField(blank=True, default="")
+    banner_url = models.URLField(max_length=500, blank=True, default="")
+    logo_url = models.URLField(max_length=500, blank=True, default="")
     tagline = models.CharField(max_length=200, blank=True, default="")
     about = models.TextField(blank=True, default="")
     address = models.TextField(blank=True, default="")
