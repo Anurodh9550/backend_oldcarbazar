@@ -33,10 +33,15 @@ class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=6, max_length=128)
     email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
     city = serializers.CharField(required=False, allow_blank=True, max_length=80)
+    role = serializers.ChoiceField(
+        choices=User.Role.choices,
+        required=False,
+        default=User.Role.BUYER,
+    )
 
     class Meta:
         model = User
-        fields = ("name", "email", "phone", "password", "city")
+        fields = ("name", "email", "phone", "password", "city", "role")
 
     def validate_phone(self, value):
         if User.objects.filter(phone=value).exists():
