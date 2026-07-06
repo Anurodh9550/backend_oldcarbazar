@@ -18,6 +18,7 @@ from .serializers import (
     OtpSendSerializer,
     OtpVerifySerializer,
     RegisterSerializer,
+    UserRoleSerializer,
     UserSerializer,
 )
 
@@ -142,6 +143,27 @@ class UserAdminViewSet(viewsets.ReadOnlyModelViewSet):
         ser.is_valid(raise_exception=True)
         user.admin_note = ser.validated_data["note"]
         user.save(update_fields=["admin_note", "updated_at"])
+        return Response(UserSerializer(user).data)
+
+    @action(detail=True, methods=["post"])
+    def role(self, request, pk=None):
+        """POST /api/v1/admin-panel/users/<id>/role/  body: { role: buyer|seller|both }"""
+        from apps.adminpanel.models import ActivityLog
+
+        user = self.get_object()
+        ser = UserRoleSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        old_role = user.role
+        user.role = ser.validated_data["role"]
+        user.save(update_fields=["role", "updated_at"])
+
+        admin = getattr(request, "admin", None)
+        ActivityLog.objects.create(
+            actor_admin=admin,
+            type="settings-updated",
+            message=f"Changed role for {user.name} from {old_role} to {user.role}",
+            target=str(user.id),
+        )
         return Response(UserSerializer(user).data)
 
     @action(detail=True, methods=["post"], url_path="grant-subscription")

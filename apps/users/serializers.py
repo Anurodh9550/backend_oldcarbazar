@@ -178,6 +178,10 @@ class BlockUserSerializer(serializers.Serializer):
     blocked = serializers.BooleanField()
 
 
+class UserRoleSerializer(serializers.Serializer):
+    role = serializers.ChoiceField(choices=User.Role.choices)
+
+
 class GrantSubscriptionSerializer(serializers.Serializer):
     plan = serializers.CharField(max_length=40)
     notes = serializers.CharField(max_length=500, required=False, allow_blank=True, default="")
