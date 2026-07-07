@@ -4,7 +4,7 @@ from django.db.models import F
 from rest_framework import serializers
 
 from apps.listings.models import Listing
-from .models import Inquiry, LoanInquiry, Offer, TestDriveBooking
+from .models import Inquiry, LoanInquiry, Offer, PartnershipInquiry, TestDriveBooking
 
 
 class InquirySerializer(serializers.ModelSerializer):
@@ -306,3 +306,72 @@ class CreateLoanInquirySerializer(serializers.ModelSerializer):
 
 class LoanInquiryStatusSerializer(serializers.Serializer):
     status = serializers.ChoiceField(choices=LoanInquiry.Status.choices)
+
+
+class PartnershipInquirySerializer(serializers.ModelSerializer):
+    partnership_type_label = serializers.CharField(
+        source="get_partnership_type_display", read_only=True
+    )
+    status_label = serializers.CharField(
+        source="get_status_display", read_only=True
+    )
+
+    class Meta:
+        model = PartnershipInquiry
+        fields = (
+            "id",
+            "business_name",
+            "contact_person",
+            "email",
+            "phone",
+            "partnership_type",
+            "partnership_type_label",
+            "message",
+            "city",
+            "status",
+            "status_label",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("id", "status", "created_at", "updated_at")
+
+
+class CreatePartnershipInquirySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PartnershipInquiry
+        fields = (
+            "business_name",
+            "contact_person",
+            "email",
+            "phone",
+            "partnership_type",
+            "message",
+            "city",
+        )
+
+    def validate_phone(self, value):
+        return _validate_indian_phone(value)
+
+    def validate_business_name(self, value):
+        cleaned = value.strip()
+        if len(cleaned) < 2:
+            raise serializers.ValidationError("Please enter your business name.")
+        return cleaned
+
+    def validate_contact_person(self, value):
+        cleaned = value.strip()
+        if len(cleaned) < 2:
+            raise serializers.ValidationError("Please enter the contact person name.")
+        return cleaned
+
+    def validate_message(self, value):
+        cleaned = value.strip()
+        if len(cleaned) < 10:
+            raise serializers.ValidationError(
+                "Please tell us a bit more about your business."
+            )
+        return cleaned
+
+
+class PartnershipInquiryStatusSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(choices=PartnershipInquiry.Status.choices)

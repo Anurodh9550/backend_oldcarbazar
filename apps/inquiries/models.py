@@ -221,6 +221,51 @@ class LoanInquiry(models.Model):
         return f"{self.full_name} → {self.bank_name} ({self.loan_partner})"
 
 
+class PartnershipInquiry(models.Model):
+    """B2B partnership application from /partner (dealers, insurers, services)."""
+
+    class PartnershipType(models.TextChoices):
+        DEALER = "dealer", "Dealer / Showroom"
+        INSURANCE = "insurance", "Insurance"
+        SERVICE = "service", "Service / Inspection"
+        OTHER = "other", "Other"
+
+    class Status(models.TextChoices):
+        NEW = "new", "New"
+        CONTACTED = "contacted", "Contacted"
+        APPROVED = "approved", "Approved"
+        REJECTED = "rejected", "Rejected"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    business_name = models.CharField(max_length=160)
+    contact_person = models.CharField(max_length=120)
+    email = models.EmailField()
+    phone = models.CharField(max_length=15, db_index=True)
+    partnership_type = models.CharField(
+        max_length=20,
+        choices=PartnershipType.choices,
+        db_index=True,
+    )
+    message = models.TextField()
+    city = models.CharField(max_length=80, blank=True, default="")
+    status = models.CharField(
+        max_length=10,
+        choices=Status.choices,
+        default=Status.NEW,
+        db_index=True,
+    )
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        verbose_name = "Partnership inquiry"
+        verbose_name_plural = "Partnership inquiries"
+
+    def __str__(self) -> str:
+        return f"{self.business_name} ({self.get_partnership_type_display()})"
+
+
 class Offer(models.Model):
     """A price offer from a buyer to a seller for a specific listing."""
 

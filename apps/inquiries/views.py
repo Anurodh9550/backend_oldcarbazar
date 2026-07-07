@@ -5,10 +5,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.adminpanel.permissions import IsAdminOperator
-from .models import Inquiry, ListingView, LoanInquiry, Offer, TestDriveBooking
+from .models import Inquiry, ListingView, LoanInquiry, Offer, PartnershipInquiry, TestDriveBooking
 from .serializers import (
     CreateInquirySerializer,
     CreateLoanInquirySerializer,
+    CreatePartnershipInquirySerializer,
     CreateOfferSerializer,
     CreateTestDriveSerializer,
     InquirySerializer,
@@ -17,6 +18,8 @@ from .serializers import (
     LoanInquiryStatusSerializer,
     OfferResponseSerializer,
     OfferSerializer,
+    PartnershipInquirySerializer,
+    PartnershipInquiryStatusSerializer,
     TestDriveBookingSerializer,
     TestDriveStatusSerializer,
 )
@@ -311,6 +314,64 @@ class LoanInquiryViewSet(
         inquiry.status = ser.validated_data["status"]
         inquiry.save(update_fields=["status", "updated_at"])
         return Response(LoanInquirySerializer(inquiry).data)
+
+
+class PartnershipInquiryViewSet(
+    mixins.CreateModelMixin,
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.GenericViewSet,
+):
+    """B2B partnership applications from /partner.
+
+    - POST /api/v1/partnership-inquiries/             public
+    - GET  /api/v1/partnership-inquiries/             admin-only list
+    - POST /api/v1/partnership-inquiries/<id>/status/ admin-only status update
+    - DELETE /api/v1/partnership-inquiries/<id>/      admin-only delete
+    """
+
+    queryset = PartnershipInquiry.objects.all()
+    serializer_class = PartnershipInquirySerializer
+    filterset_fields = ("status", "partnership_type", "city")
+    search_fields = (
+        "business_name",
+        "contact_person",
+        "email",
+        "phone",
+        "message",
+        "city",
+    )
+    ordering_fields = ("created_at",)
+    ordering = ("-created_at",)
+
+    def get_permissions(self):
+        if self.action == "create":
+            return [permissions.AllowAny()]
+        return [IsAdminOperator()]
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return CreatePartnershipInquirySerializer
+        return PartnershipInquirySerializer
+
+    def create(self, request, *args, **kwargs):
+        ser = self.get_serializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        inquiry = ser.save()
+        return Response(
+            PartnershipInquirySerializer(inquiry).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @action(detail=True, methods=["post"])
+    def status(self, request, pk=None):
+        inquiry = self.get_object()
+        ser = PartnershipInquiryStatusSerializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        inquiry.status = ser.validated_data["status"]
+        inquiry.save(update_fields=["status", "updated_at"])
+        return Response(PartnershipInquirySerializer(inquiry).data)
 
 
 class TestDriveBookingViewSet(

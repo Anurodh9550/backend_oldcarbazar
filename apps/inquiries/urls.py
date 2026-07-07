@@ -3,6 +3,7 @@ from .views import (
     InquiryViewSet,
     LoanInquiryViewSet,
     OfferViewSet,
+    PartnershipInquiryViewSet,
     TestDriveBookingViewSet,
 )
 
@@ -21,6 +22,12 @@ offer_router.register("", OfferViewSet, basename="offer")
 loan_inquiry_router = DefaultRouter()
 loan_inquiry_router.register("", LoanInquiryViewSet, basename="loan-inquiry")
 
+partnership_inquiry_router = DefaultRouter()
+partnership_inquiry_router.register(
+    "", PartnershipInquiryViewSet, basename="partnership-inquiry"
+)
+
 test_drive_urls = test_drive_router.urls
 offer_urls = offer_router.urls
 loan_inquiry_urls = loan_inquiry_router.urls
+partnership_inquiry_urls = partnership_inquiry_router.urls
