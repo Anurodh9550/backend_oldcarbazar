@@ -2,7 +2,7 @@ from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate, get_user_model
 
-from .models import ActivityLog, Admin, AppSettings
+from .models import ActivityLog, Admin, AppSettings, WhatsAppIntentLog
 
 User = get_user_model()
 
@@ -90,7 +90,15 @@ class AppSettingsSerializer(serializers.ModelSerializer):
             "auto_approve_listings", "maintenance_mode",
             "email_notifications", "sms_notifications", "whatsapp_enabled",
             "max_photos_per_listing", "min_listing_price", "max_listing_price",
-            "blocked_keywords", "support_email", "support_phone",
+            "blocked_keywords", "support_email", "support_phone", "whatsapp_phone",
             "brand_color", "loan_tools_content", "dealer_offer", "ads", "updated_at",
         )
         read_only_fields = ("updated_at",)
+
+
+class WhatsAppIntentSerializer(serializers.Serializer):
+    intent = serializers.ChoiceField(choices=WhatsAppIntentLog.Intent.choices)
+    listing_id = serializers.CharField(required=False, allow_blank=True, default="")
+    city = serializers.CharField(required=False, allow_blank=True, default="", max_length=80)
+    language = serializers.ChoiceField(choices=("en", "hi"), required=False, default="en")
+    metadata = serializers.JSONField(required=False, allow_null=True)

@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "django_filters",
     "drf_spectacular",
+    "channels",
     # Local apps
     "apps.users",
     "apps.cities",
@@ -84,6 +85,11 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "config.wsgi.application"
 ASGI_APPLICATION = "config.asgi.application"
+CHANNEL_LAYERS = {
+    "default": {
+        "BACKEND": "channels.layers.InMemoryChannelLayer",
+    }
+}
 
 # ----------------------------- Database ----------------------------- #
 DATABASES = {

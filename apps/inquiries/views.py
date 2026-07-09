@@ -1,17 +1,34 @@
-from django.db.models import Q
+import csv
+from datetime import timedelta
+from django.db.models import Count, Q
+from django.http import HttpResponse
+from django.utils import timezone
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from rest_framework import mixins, permissions, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.adminpanel.models import Admin
 from apps.adminpanel.permissions import IsAdminOperator
-from .models import Inquiry, ListingView, LoanInquiry, Offer, PartnershipInquiry, TestDriveBooking
+from .models import (
+    ExpertRequest,
+    Inquiry,
+    ListingView,
+    LoanInquiry,
+    Offer,
+    PartnershipInquiry,
+    TestDriveBooking,
+)
 from .serializers import (
+    CreateExpertRequestSerializer,
     CreateInquirySerializer,
     CreateLoanInquirySerializer,
-    CreatePartnershipInquirySerializer,
     CreateOfferSerializer,
+    CreatePartnershipInquirySerializer,
     CreateTestDriveSerializer,
+    ExpertRequestSerializer,
     InquirySerializer,
     InquiryStatusSerializer,
     LoanInquirySerializer,
@@ -535,3 +552,177 @@ class OfferViewSet(
         offer.status = Offer.Status.WITHDRAWN
         offer.save(update_fields=["status", "updated_at"])
         return Response(OfferSerializer(offer).data)
+
+
+class ExpertRequestViewSet(
+    mixins.CreateModelMixin,
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.GenericViewSet,
+):
+    """Talk-to-expert requests.
+
+    - POST /api/v1/expert-requests/             public + logged-in users
+    - GET  /api/v1/expert-requests/             admin list with filters/search
+    - PATCH/DELETE /api/v1/expert-requests/<id>/ admin-only CRUD
+    - GET  /api/v1/expert-requests/assignees/   admin operators for assignment
+    - GET  /api/v1/expert-requests/analytics/   admin dashboard counters
+    - GET  /api/v1/expert-requests/export-csv/  admin CSV download
+    """
+
+    queryset = ExpertRequest.objects.select_related("user", "assigned_to").all()
+    ordering = ("-created_at",)
+    search_fields = ("name", "phone", "email", "city", "message", "notes")
+
+    def get_permissions(self):
+        if self.action == "create":
+            return [permissions.AllowAny()]
+        return [IsAdminOperator()]
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return CreateExpertRequestSerializer
+        return ExpertRequestSerializer
+
+    def get_queryset(self):
+        qs = self.queryset
+        status_val = self.request.query_params.get("status")
+        requirement_val = self.request.query_params.get("requirement")
+        date_val = self.request.query_params.get("date")
+        q = self.request.query_params.get("q")
+
+        if status_val:
+            qs = qs.filter(status=status_val)
+        if requirement_val:
+            qs = qs.filter(requirement=requirement_val)
+        if date_val:
+            try:
+                start = timezone.datetime.fromisoformat(date_val)
+                start = timezone.make_aware(start) if timezone.is_naive(start) else start
+                end = start + timedelta(days=1)
+                qs = qs.filter(created_at__gte=start, created_at__lt=end)
+            except ValueError:
+                pass
+        if q:
+            qs = qs.filter(
+                Q(name__icontains=q)
+                | Q(phone__icontains=q)
+                | Q(email__icontains=q)
+                | Q(city__icontains=q)
+                | Q(message__icontains=q)
+                | Q(notes__icontains=q)
+            )
+        return qs
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        obj = serializer.save()
+        payload = ExpertRequestSerializer(obj).data
+        self._notify_admins(obj, payload)
+        return Response(payload, status=status.HTTP_201_CREATED)
+
+    def _notify_admins(self, obj: ExpertRequest, payload: dict):
+        channel_layer = get_channel_layer()
+        if not channel_layer:
+            return
+        async_to_sync(channel_layer.group_send)(
+            "admin_expert_requests",
+            {
+                "type": "expert.request.created",
+                "event": "expert_request_created",
+                "request": payload,
+                "summary": {
+                    "id": str(obj.id),
+                    "name": obj.name,
+                    "requirement": obj.requirement,
+                    "created_at": obj.created_at.isoformat(),
+                },
+            },
+        )
+
+    @action(detail=False, methods=["get"], url_path="assignees")
+    def assignees(self, request):
+        admins = Admin.objects.all().order_by("name")
+        data = [
+            {"id": str(a.id), "name": a.name, "email": a.email, "role": a.role}
+            for a in admins
+        ]
+        return Response({"assignees": data})
+
+    @action(detail=False, methods=["get"], url_path="analytics")
+    def analytics(self, request):
+        qs = self.get_queryset()
+        today = timezone.localdate()
+        total = qs.count()
+        today_count = qs.filter(created_at__date=today).count()
+        pending = qs.filter(
+            status__in=[ExpertRequest.Status.NEW, ExpertRequest.Status.PENDING]
+        ).count()
+        connected = qs.filter(status=ExpertRequest.Status.CONNECTED).count()
+        completed = qs.filter(status=ExpertRequest.Status.COMPLETED).count()
+        conversion_rate = round((completed / max(1, total)) * 100, 2)
+
+        status_breakdown = {
+            row["status"]: row["count"]
+            for row in qs.values("status").annotate(count=Count("id"))
+        }
+        requirement_breakdown = {
+            row["requirement"]: row["count"]
+            for row in qs.values("requirement").annotate(count=Count("id"))
+        }
+        return Response(
+            {
+                "total_requests": total,
+                "today_requests": today_count,
+                "pending": pending,
+                "connected": connected,
+                "completed": completed,
+                "conversion_rate": conversion_rate,
+                "status_breakdown": status_breakdown,
+                "requirement_breakdown": requirement_breakdown,
+            }
+        )
+
+    @action(detail=False, methods=["get"], url_path="export-csv")
+    def export_csv(self, request):
+        qs = self.get_queryset()
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = (
+            f'attachment; filename="expert-requests-{timezone.now().date()}.csv"'
+        )
+        writer = csv.writer(response)
+        writer.writerow(
+            [
+                "ID",
+                "Name",
+                "Phone",
+                "Email",
+                "City",
+                "Requirement",
+                "Status",
+                "Assigned To",
+                "Notes",
+                "Message",
+                "Created At",
+            ]
+        )
+        for item in qs:
+            writer.writerow(
+                [
+                    str(item.id),
+                    item.name,
+                    item.phone,
+                    item.email or "",
+                    item.city,
+                    item.get_requirement_display(),
+                    item.get_status_display(),
+                    item.assigned_to.name if item.assigned_to else "",
+                    item.notes,
+                    item.message,
+                    timezone.localtime(item.created_at).isoformat(),
+                ]
+            )
+        return response

@@ -4,7 +4,14 @@ from django.db.models import F
 from rest_framework import serializers
 
 from apps.listings.models import Listing
-from .models import Inquiry, LoanInquiry, Offer, PartnershipInquiry, TestDriveBooking
+from .models import (
+    ExpertRequest,
+    Inquiry,
+    LoanInquiry,
+    Offer,
+    PartnershipInquiry,
+    TestDriveBooking,
+)
 
 
 class InquirySerializer(serializers.ModelSerializer):
@@ -375,3 +382,81 @@ class CreatePartnershipInquirySerializer(serializers.ModelSerializer):
 
 class PartnershipInquiryStatusSerializer(serializers.Serializer):
     status = serializers.ChoiceField(choices=PartnershipInquiry.Status.choices)
+
+
+class ExpertRequestSerializer(serializers.ModelSerializer):
+    requirement_label = serializers.CharField(
+        source="get_requirement_display", read_only=True
+    )
+    status_label = serializers.CharField(source="get_status_display", read_only=True)
+    assigned_to_name = serializers.CharField(source="assigned_to.name", read_only=True)
+    assigned_to_email = serializers.CharField(source="assigned_to.email", read_only=True)
+
+    class Meta:
+        model = ExpertRequest
+        fields = (
+            "id",
+            "user",
+            "name",
+            "phone",
+            "email",
+            "city",
+            "requirement",
+            "requirement_label",
+            "message",
+            "status",
+            "status_label",
+            "assigned_to",
+            "assigned_to_name",
+            "assigned_to_email",
+            "notes",
+            "created_at",
+            "updated_at",
+        )
+        read_only_fields = ("id", "user", "created_at", "updated_at")
+
+
+class CreateExpertRequestSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    phone = serializers.CharField(max_length=15, required=False, allow_blank=True)
+    email = serializers.EmailField(required=False, allow_blank=True)
+    city = serializers.CharField(max_length=80, required=False, allow_blank=True)
+    requirement = serializers.ChoiceField(choices=ExpertRequest.Requirement.choices)
+    message = serializers.CharField(
+        max_length=2000, required=False, allow_blank=True, default=""
+    )
+
+    def validate(self, attrs):
+        request = self.context["request"]
+        if request.user.is_authenticated:
+            attrs["name"] = attrs.get("name") or request.user.name
+            attrs["phone"] = _validate_indian_phone(
+                attrs.get("phone") or request.user.phone
+            )
+            attrs["email"] = attrs.get("email") or request.user.email
+            attrs["city"] = attrs.get("city") or request.user.city or ""
+            return attrs
+
+        if not attrs.get("name", "").strip():
+            raise serializers.ValidationError({"name": "Please enter your name."})
+        if not attrs.get("phone", "").strip():
+            raise serializers.ValidationError({"phone": "Please enter your phone."})
+        if not attrs.get("city", "").strip():
+            raise serializers.ValidationError({"city": "Please enter your city."})
+
+        attrs["name"] = attrs["name"].strip()
+        attrs["phone"] = _validate_indian_phone(attrs["phone"])
+        attrs["city"] = attrs["city"].strip()
+        return attrs
+
+    def create(self, validated_data):
+        request = self.context["request"]
+        return ExpertRequest.objects.create(
+            user=request.user if request.user.is_authenticated else None,
+            name=validated_data["name"].strip(),
+            phone=validated_data["phone"],
+            email=(validated_data.get("email") or "").strip() or None,
+            city=(validated_data.get("city") or "").strip(),
+            requirement=validated_data["requirement"],
+            message=(validated_data.get("message") or "").strip(),
+        )

@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import ActivityLog, Admin, AppSettings
+from .models import ActivityLog, Admin, AppSettings, WhatsAppIntentLog
 
 
 @admin.register(Admin)
@@ -23,3 +23,11 @@ class ActivityLogAdmin(admin.ModelAdmin):
 @admin.register(AppSettings)
 class AppSettingsAdmin(admin.ModelAdmin):
     list_display = ("id", "auto_approve_listings", "maintenance_mode", "updated_at")
+
+
+@admin.register(WhatsAppIntentLog)
+class WhatsAppIntentLogAdmin(admin.ModelAdmin):
+    list_display = ("intent", "listing_id", "city", "language", "user", "created_at")
+    list_filter = ("intent", "language")
+    search_fields = ("listing_id", "city")
+    readonly_fields = ("created_at",)

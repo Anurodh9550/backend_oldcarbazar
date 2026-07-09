@@ -1,5 +1,12 @@
 from django.contrib import admin
-from .models import Inquiry, ListingView, LoanInquiry, Offer, TestDriveBooking
+from .models import (
+    ExpertRequest,
+    Inquiry,
+    ListingView,
+    LoanInquiry,
+    Offer,
+    TestDriveBooking,
+)
 
 
 @admin.register(Inquiry)
@@ -56,3 +63,19 @@ class OfferAdmin(admin.ModelAdmin):
     )
     list_filter = ("status",)
     search_fields = ("buyer_name", "buyer_phone", "listing_title")
+
+
+@admin.register(ExpertRequest)
+class ExpertRequestAdmin(admin.ModelAdmin):
+    list_display = (
+        "name",
+        "phone",
+        "city",
+        "requirement",
+        "status",
+        "assigned_to",
+        "created_at",
+    )
+    list_filter = ("status", "requirement", "city")
+    search_fields = ("name", "phone", "email", "city", "message", "notes")
+    autocomplete_fields = ("assigned_to", "user")

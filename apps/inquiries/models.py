@@ -2,6 +2,7 @@
 import uuid
 from django.conf import settings
 from django.db import models
+from apps.adminpanel.models import Admin
 
 
 class Inquiry(models.Model):
@@ -264,6 +265,68 @@ class PartnershipInquiry(models.Model):
 
     def __str__(self) -> str:
         return f"{self.business_name} ({self.get_partnership_type_display()})"
+
+
+class ExpertRequest(models.Model):
+    """Lead captured from "Talk to an Expert" widget."""
+
+    class Requirement(models.TextChoices):
+        BUY_CAR = "buy_car", "Buy Car"
+        SELL_CAR = "sell_car", "Sell Car"
+        CAR_LOAN = "car_loan", "Car Loan"
+        INSURANCE = "insurance", "Insurance"
+        OTHER = "other", "Other"
+
+    class Status(models.TextChoices):
+        NEW = "new", "New"
+        PENDING = "pending", "Pending"
+        CALLING = "calling", "Calling"
+        CONNECTED = "connected", "Connected"
+        COMPLETED = "completed", "Completed"
+        CLOSED = "closed", "Closed"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="expert_requests",
+        null=True,
+        blank=True,
+    )
+    name = models.CharField(max_length=120)
+    phone = models.CharField(max_length=15, db_index=True)
+    email = models.EmailField(blank=True, null=True)
+    city = models.CharField(max_length=80, blank=True, default="")
+    requirement = models.CharField(
+        max_length=20,
+        choices=Requirement.choices,
+        default=Requirement.OTHER,
+        db_index=True,
+    )
+    message = models.TextField(blank=True, default="")
+    status = models.CharField(
+        max_length=12, choices=Status.choices, default=Status.NEW, db_index=True
+    )
+    assigned_to = models.ForeignKey(
+        Admin,
+        on_delete=models.SET_NULL,
+        related_name="expert_requests",
+        null=True,
+        blank=True,
+    )
+    notes = models.TextField(blank=True, default="")
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+        indexes = [
+            models.Index(fields=["status", "-created_at"]),
+            models.Index(fields=["requirement", "-created_at"]),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({self.get_requirement_display()})"
 
 
 class Offer(models.Model):

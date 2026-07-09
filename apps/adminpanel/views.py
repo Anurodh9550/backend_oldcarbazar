@@ -13,13 +13,14 @@ from apps.users.views import UserAdminViewSet  # noqa: F401  (re-exported in url
 
 from .dealer_offers import DEFAULT_DEALER_OFFER_CAMPAIGN, merge_dealer_offer_campaign
 from .gemini_client import generate_gemini_reply, get_gemini_api_key
-from .models import ActivityLog, Admin, AppSettings
+from .models import ActivityLog, Admin, AppSettings, WhatsAppIntentLog
 from .permissions import IsAdminOperator
 from .serializers import (
     ActivityLogSerializer,
     AdminLoginSerializer,
     AdminSerializer,
     AppSettingsSerializer,
+    WhatsAppIntentSerializer,
     admin_jwt_tokens,
     staff_jwt_tokens,
 )
@@ -58,9 +59,11 @@ def _assistant_rule_reply(question: str) -> str | None:
         "support",
     )
     if any(trigger in q for trigger in contact_triggers):
+        wa = settings.whatsapp_phone or settings.support_phone
         return (
             f"Old Car Bazar support:\n"
             f"Phone: {settings.support_phone}\n"
+            f"WhatsApp: {wa}\n"
             f"Email: {settings.support_email}\n"
             f"Website par Contact / Help section bhi dekh sakte ho."
         )
@@ -552,6 +555,53 @@ class AdsView(generics.GenericAPIView):
             ]
 
         return Response({"ads": enabled})
+
+
+def _normalize_whatsapp_phone(raw: str) -> str:
+    digits = "".join(ch for ch in (raw or "") if ch.isdigit())
+    if len(digits) == 10:
+        return f"91{digits}"
+    return digits
+
+
+class WhatsAppConfigView(generics.GenericAPIView):
+    """GET /api/v1/whatsapp/config/ — public concierge WhatsApp settings."""
+
+    permission_classes = (permissions.AllowAny,)
+
+    def get(self, request):
+        settings_row = AppSettings.singleton()
+        phone = _normalize_whatsapp_phone(
+            settings_row.whatsapp_phone or settings_row.support_phone
+        )
+        return Response({
+            "enabled": settings_row.whatsapp_enabled,
+            "phone": phone,
+            "support_phone": settings_row.support_phone,
+            "support_email": settings_row.support_email,
+        })
+
+
+class WhatsAppIntentView(generics.GenericAPIView):
+    """POST /api/v1/whatsapp/intents/ — log a storefront WhatsApp button tap."""
+
+    permission_classes = (permissions.AllowAny,)
+    serializer_class = WhatsAppIntentSerializer
+
+    def post(self, request):
+        ser = self.get_serializer(data=request.data)
+        ser.is_valid(raise_exception=True)
+        data = ser.validated_data
+        user = request.user if request.user.is_authenticated else None
+        WhatsAppIntentLog.objects.create(
+            intent=data["intent"],
+            listing_id=(data.get("listing_id") or "").strip(),
+            city=(data.get("city") or "").strip(),
+            language=data.get("language") or "en",
+            user=user,
+            metadata=data.get("metadata"),
+        )
+        return Response({"ok": True}, status=status.HTTP_201_CREATED)
 
 
 class ActivityLogViewSet(

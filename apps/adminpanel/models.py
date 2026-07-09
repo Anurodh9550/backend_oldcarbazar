@@ -98,7 +98,10 @@ class AppSettings(models.Model):
         default=list, blank=True
     )
     support_email = models.EmailField(default="support@oldcarbazar.com")
-    support_phone = models.CharField(max_length=32, default="+91 98765 43210")
+    support_phone = models.CharField(max_length=32, default="+91 91358 95389")
+    # Business WhatsApp for concierge (sell/buy/loan/help). Digits-only with
+    # country code is fine — the storefront normalises before opening wa.me.
+    whatsapp_phone = models.CharField(max_length=32, default="919135895389")
     brand_color = models.CharField(max_length=16, default="#f75d34")
     loan_tools_content = models.JSONField(blank=True, null=True)
     # Dealer launch-offer campaign (title, duration default, max grants, etc.)
@@ -125,3 +128,36 @@ class AppSettings(models.Model):
 
     def __str__(self) -> str:
         return "App settings"
+
+
+class WhatsAppIntentLog(models.Model):
+    """Tracks WhatsApp button taps from the storefront (concierge + seller contact)."""
+
+    class Intent(models.TextChoices):
+        SELL = "sell", "Sell via concierge"
+        BUY = "buy", "Buy via concierge"
+        LOAN = "loan", "Loan help"
+        HELP = "help", "Support"
+        SELLER_CONTACT = "seller_contact", "Contact listing seller"
+        SHARE_LISTING = "share_listing", "Share listing"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    intent = models.CharField(max_length=32, choices=Intent.choices, db_index=True)
+    listing_id = models.CharField(max_length=64, blank=True, default="")
+    city = models.CharField(max_length=80, blank=True, default="")
+    language = models.CharField(max_length=8, blank=True, default="en")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="whatsapp_intents",
+    )
+    metadata = models.JSONField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+
+    def __str__(self) -> str:
+        return f"[{self.intent}] {self.created_at:%Y-%m-%d %H:%M}"

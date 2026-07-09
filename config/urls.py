@@ -8,9 +8,16 @@ from drf_spectacular.views import (
     SpectacularSwaggerView,
 )
 
-from apps.adminpanel.views import AdsView, AssistantView, LoanToolsContentView
+from apps.adminpanel.views import (
+    AdsView,
+    AssistantView,
+    LoanToolsContentView,
+    WhatsAppConfigView,
+    WhatsAppIntentView,
+)
 
 from apps.inquiries.urls import (
+    expert_request_urls,
     loan_inquiry_urls,
     offer_urls,
     partnership_inquiry_urls,
@@ -28,6 +35,7 @@ api_v1 = [
     path("test-drives/", include((test_drive_urls, "test-drives"))),
     path("offers/", include((offer_urls, "offers"))),
     path("loan-inquiries/", include((loan_inquiry_urls, "loan-inquiries"))),
+    path("expert-requests/", include((expert_request_urls, "expert-requests"))),
     path(
         "partnership-inquiries/",
         include((partnership_inquiry_urls, "partnership-inquiries")),
@@ -42,6 +50,8 @@ api_v1 = [
     ),
     path("ads/", AdsView.as_view(), name="ads"),
     path("assistant/", AssistantView.as_view(), name="assistant"),
+    path("whatsapp/config/", WhatsAppConfigView.as_view(), name="whatsapp-config"),
+    path("whatsapp/intents/", WhatsAppIntentView.as_view(), name="whatsapp-intents"),
 ]
 
 urlpatterns = [
